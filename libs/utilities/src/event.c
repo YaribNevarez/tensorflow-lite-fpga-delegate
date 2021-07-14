@@ -30,7 +30,7 @@
 
 /************************** Function Prototypes ******************************/
 
-Event * Event_new (Event * parent, void * data)
+Event * Event_new (Event * parent, EventType type, void * data)
 {
   Event * event = (Event *) malloc (sizeof(Event));
   ASSERT (event != NULL);
@@ -40,6 +40,8 @@ Event * Event_new (Event * parent, void * data)
     memset (event, 0, sizeof(Event));
 
     event->data = (char *) data;
+
+    event->type = type;
 
     event->timer = Timer_new (1);
 
@@ -240,35 +242,29 @@ static NavigationReturn Event_collectScheduleData (Event * event, void * data)
 
   if ((event != NULL) && (data != NULL))
   {
-    if (((event->first_child == NULL) && (0.0 < event->latency))
-        || (event->first_child->first_child == NULL)
-        || (event->parent == NULL))
+    TextLines * text = (TextLines*) data;
+    char * color;
+
+    switch (event->type)
     {
-      TextLines * text = (TextLines*) data;
-      char * layer_name;
-      char * color;
-
-      if (event->first_child == NULL)
-      { // Hardware
-        layer_name = event->parent->parent->data;
-        color = "#1864ab";
-      }
-      else if (event->first_child->first_child == NULL)
-      { // Software
-        layer_name = event->parent->data;
-        color = "#4a98c9";
-      }
-      else
-      { // Network
-        layer_name = "";
-        color = "#94c4df";
-      }
-
-      sprintf (&(*text)[0][strlen ((*text)[0])], "%.3lf, ", event->absolute_offset * 1000);
-      sprintf (&(*text)[1][strlen ((*text)[1])], "%.3lf, ", event->latency * 1000);
-      sprintf (&(*text)[2][strlen ((*text)[2])], "\"%s_%s\", ", layer_name, (char*) event->data);
-      sprintf (&(*text)[3][strlen ((*text)[3])], "\"%s\", ", color);
+      case EVENT_NETWORK:
+        color = (char*) "#1864ab";
+        break;
+      case EVENT_LAYER:
+        color = (char*) "#4a98c9";
+        break;
+      case EVENT_HARDWARE:
+        color = (char*) "#94c4df";
+        break;
+      default:
+        ASSERT(0);
     }
+
+    sprintf (&(*text)[0][strlen ((*text)[0])], "%.3lf, ", event->absolute_offset * 1000);
+    sprintf (&(*text)[1][strlen ((*text)[1])], "%.3lf, ", event->latency * 1000);
+    sprintf (&(*text)[2][strlen ((*text)[2])], "\"%s\", ", (char*) event->data);
+    sprintf (&(*text)[3][strlen ((*text)[3])], "\"%s\", ", color);
+
     result = NAV_CONTINUE;
   }
 
@@ -283,16 +279,15 @@ static NavigationReturn Event_collectLatencyData (Event * event, void * data)
 
   if ((event != NULL) && (data != NULL))
   {
-    if (   (event->first_child == NULL)
-        && (event->parent != NULL)
-        && (event->parent->parent != NULL))
+    if (event->type == EVENT_LAYER)
     { /* Then is a hardware event */
       TextLines * text = (TextLines*) data;
+      double hw_latency = (event->first_child != NULL) ? event->first_child->latency : 0.0;
 
-      sprintf (&(*text)[0][strlen ((*text)[0])], "%.3lf, ", event->parent->absolute_offset * 1000);
-      sprintf (&(*text)[1][strlen ((*text)[1])], "%.3lf, ", event->parent->latency * 1000);
-      sprintf (&(*text)[2][strlen ((*text)[2])], "%.3lf, ", event->latency * 1000);
-      sprintf (&(*text)[3][strlen ((*text)[3])], "\"%s\", ", (char*) event->parent->parent->data);
+      sprintf (&(*text)[0][strlen ((*text)[0])], "%.3lf, ", event->absolute_offset * 1000);
+      sprintf (&(*text)[1][strlen ((*text)[1])], "%.3lf, ", event->latency * 1000);
+      sprintf (&(*text)[2][strlen ((*text)[2])], "%.3lf, ", hw_latency * 1000);
+      sprintf (&(*text)[3][strlen ((*text)[3])], "\"%s\", ", (char*) event->data);
     }
     result = NAV_CONTINUE;
   }

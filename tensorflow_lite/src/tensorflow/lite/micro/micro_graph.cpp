@@ -49,7 +49,10 @@ MicroGraph::MicroGraph(TfLiteContext* context, const Model* model,
   }
 }
 
-MicroGraph::~MicroGraph() {}
+MicroGraph::~MicroGraph ()
+{
+  DisposeEventLogger ();
+}
 
 TfLiteStatus MicroGraph::InitSubgraphs() {
   int previous_subgraph_idx = current_subgraph_index_;
@@ -170,8 +173,12 @@ TfLiteStatus MicroGraph::InvokeSubgraph(int subgraph_idx) {
         reinterpret_cast<MicroProfiler*>(context_->profiler));
 #endif
 
+    Event_start (event_array_[i]);
+
     TFLITE_DCHECK(registration->invoke);
     TfLiteStatus invoke_status = registration->invoke(context_, node);
+
+    Event_stop (event_array_[i]);
 
     // All TfLiteTensor structs used in the kernel are allocated from temp
     // memory in the allocator. This creates a chain of allocations in the
@@ -242,6 +249,36 @@ TfLiteEvalTensor* MicroGraph::GetSubgraphOutput(int subgraph_idx,
   int tensor_idx =
       model_->subgraphs()->Get(subgraph_idx)->outputs()->Get(output_idx);
   return &subgraph_allocations_[subgraph_idx].tensors[tensor_idx];
+}
+
+void MicroGraph::AllocateEventLogger (Event * parent, int subgraph_idx)
+{
+  if (event_array_ == nullptr)
+  {
+    const SubGraph* subgraph = (*subgraphs_)[subgraph_idx];
+    event_array_len_ = subgraph->operators ()->size ();
+
+    event_array_ = (Event**) malloc (sizeof(Event*) * event_array_len_);
+
+    for (size_t i = 0; i < event_array_len_; ++i)
+    {
+      event_array_[i] = Event_new (parent, EVENT_LAYER, (void *) "Layer");
+    }
+  }
+}
+
+void MicroGraph::DisposeEventLogger (void)
+{
+  if (event_array_ == nullptr)
+  {
+    for (size_t i = 0; i < event_array_len_; ++i)
+    {
+      Event_delete (&event_array_[i]);
+    }
+    free (event_array_);
+    event_array_ = nullptr;
+    event_array_len_ = 0;
+  }
 }
 
 }  // namespace tflite

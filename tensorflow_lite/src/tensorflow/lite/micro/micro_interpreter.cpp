@@ -73,6 +73,11 @@ MicroInterpreter::~MicroInterpreter() {
   if (graph_.GetAllocations() != nullptr) {
     graph_.FreeSubgraphs();
   }
+
+  if (event_ != nullptr)
+  {
+    Event_delete (&event_);
+  }
 }
 
 void MicroInterpreter::Init(MicroProfiler* profiler) {
@@ -264,11 +269,16 @@ TfLiteStatus MicroInterpreter::AllocateTensors() {
 
   TF_LITE_ENSURE_STATUS(ResetVariableTensors());
 
+  event_ = Event_new(nullptr, EVENT_NETWORK, (void *)"Interpreter");
+
+  graph_.AllocateEventLogger(event_, 0);
+
   tensors_allocated_ = true;
   return kTfLiteOk;
 }
 
 TfLiteStatus MicroInterpreter::Invoke() {
+  TfLiteStatus rc;
   if (initialization_status_ != kTfLiteOk) {
     TF_LITE_REPORT_ERROR(error_reporter_,
                          "Invoke() called after initialization failed\n");
@@ -280,7 +290,14 @@ TfLiteStatus MicroInterpreter::Invoke() {
   if (!tensors_allocated_) {
     TF_LITE_ENSURE_OK(&context_, AllocateTensors());
   }
-  return graph_.InvokeSubgraph(0);
+
+  Event_start (event_);
+
+  rc = graph_.InvokeSubgraph(0);
+
+  Event_stop (event_);
+
+  return rc;
 }
 
 TfLiteTensor* MicroInterpreter::input(size_t index) {
@@ -368,6 +385,13 @@ TfLiteStatus MicroInterpreter::GetGraph(struct TfLiteContext* context,
       reinterpret_cast<MicroInterpreter*>(context->impl_);
   *args = reinterpret_cast<TfLiteIntArray*>(&interpreter->graph_);
   return kTfLiteOk;
+}
+
+std::string MicroInterpreter::get_eventLog(void)
+{
+  Event_print (event_);
+
+  return "";
 }
 
 }  // namespace tflite

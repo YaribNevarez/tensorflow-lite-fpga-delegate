@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_profiler.h"
 #include "tensorflow/lite/portable_type_to_tflitetype.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+#include "event.h"
 
 // Copied from tensorflow/lite/version.h to avoid a dependency chain into
 // tensorflow/core.
@@ -128,6 +129,8 @@ class MicroInterpreter {
   // arena_used_bytes() + 16.
   size_t arena_used_bytes() const { return allocator_.used_bytes(); }
 
+  std::string get_eventLog(void);
+
  protected:
   const MicroAllocator& allocator() const { return allocator_; }
   const TfLiteContext& context() const { return context_; }
@@ -171,6 +174,9 @@ class MicroInterpreter {
   // from TfLiteEvalTensor.
   TfLiteTensor** input_tensors_;
   TfLiteTensor** output_tensors_;
+
+  /////////////////////////////////////////////////////////////////////////////
+  Event * event_ = nullptr;
 };
 
 }  // namespace tflite

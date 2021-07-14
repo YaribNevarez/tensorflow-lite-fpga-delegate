@@ -109,6 +109,7 @@ void setup() {
 
 // The name of this function is important for Arduino compatibility.
 void loop() {
+  printf("Tensorflow lite CNN CIFAR classificator\n");
   // Get image from provider.
   if (kTfLiteOk != GetImage(error_reporter,
                             input->dims->data[1],
@@ -123,6 +124,8 @@ void loop() {
   if (kTfLiteOk != interpreter->Invoke()) {
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
+
+  interpreter->get_eventLog();
 
   TfLiteTensor* output = interpreter->output(0);
 

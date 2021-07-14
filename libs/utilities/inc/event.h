@@ -19,6 +19,14 @@ extern "C" {
 /***************** Macros (Inline Functions) Definitions *********************/
 typedef struct _Event Event;
 /**************************** Type Definitions *******************************/
+
+typedef enum
+{
+ EVENT_NETWORK,
+ EVENT_LAYER,
+ EVENT_HARDWARE
+} EventType;
+
 struct  _Event
 {
   Event * parent;
@@ -26,6 +34,7 @@ struct  _Event
   Event * prev;
   Event * first_child;
   char  * data;
+  EventType type;
   Timer * timer;
   double  absolute_offset;
   double  relative_offset;
@@ -38,7 +47,7 @@ struct  _Event
 
 /************************** Function Prototypes ******************************/
 
-Event * Event_new       (Event * parent, void * data);
+Event * Event_new       (Event * parent, EventType type, void * data);
 void    Event_delete    (Event ** event);
 void    Event_setParent (Event * event, Event * parent);
 void    Event_start     (Event * event);
