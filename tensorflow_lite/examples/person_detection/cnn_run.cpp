@@ -50,8 +50,9 @@ static uint8_t tensor_arena[kTensorArenaSize];
 extern unsigned char cifar_cnn_tflite[];
 
 // The name of this function is important for Arduino compatibility.
-void setup() {
-  tflite::InitializeTarget();
+void setup ()
+{
+  tflite::InitializeTarget ();
 
   // Set up logging. Google style is to avoid globals or statics because of
   // lifetime uncertainty, but since this has a trivial destructor it's okay.
@@ -61,12 +62,13 @@ void setup() {
 
   // Map the model into a usable data structure. This doesn't involve any
   // copying or parsing, it's a very lightweight operation.
-  model = tflite::GetModel(cifar_cnn_tflite);
-  if (model->version() != TFLITE_SCHEMA_VERSION) {
+  model = tflite::GetModel (g_person_detect_model_data);
+  if (model->version () != TFLITE_SCHEMA_VERSION)
+  {
     TF_LITE_REPORT_ERROR(error_reporter,
                          "Model provided is schema version %d not equal "
                          "to supported version %d.",
-                         model->version(), TFLITE_SCHEMA_VERSION);
+                         model->version (), TFLITE_SCHEMA_VERSION);
     return;
   }
 
@@ -74,64 +76,76 @@ void setup() {
 
   // Build an interpreter to run the model with.
   // NOLINTNEXTLINE(runtime-global-variables)
-  static tflite::MicroInterpreter static_interpreter(
-      model, micro_op_resolver, tensor_arena, kTensorArenaSize, error_reporter);
+  static tflite::MicroInterpreter static_interpreter (model, micro_op_resolver,
+                                                      tensor_arena,
+                                                      kTensorArenaSize,
+                                                      error_reporter);
   interpreter = &static_interpreter;
 
   // Allocate memory from the tensor_arena for the model's tensors.
-  TfLiteStatus allocate_status = interpreter->AllocateTensors();
-  if (allocate_status != kTfLiteOk) {
+  TfLiteStatus allocate_status = interpreter->AllocateTensors ();
+  if (allocate_status != kTfLiteOk)
+  {
     TF_LITE_REPORT_ERROR(error_reporter, "AllocateTensors() failed");
     return;
   }
 
   // Get information about the memory area to use for the model's input.
-  input = interpreter->input(0);
+  input = interpreter->input (0);
 
-
-  TF_LITE_REPORT_ERROR(error_reporter, "input->dims->size = %d", input->dims->size);
-  for (int i = 0; i < input->dims->size; i ++)
+  TF_LITE_REPORT_ERROR(error_reporter, "input->dims->size = %d",
+                       input->dims->size);
+  for (int i = 0; i < input->dims->size; i++)
   {
-    TF_LITE_REPORT_ERROR(error_reporter, "input->dims->data[%d] = %d", i, input->dims->data[i]);
+    TF_LITE_REPORT_ERROR(error_reporter, "input->dims->data[%d] = %d", i,
+                         input->dims->data[i]);
   }
   TF_LITE_REPORT_ERROR(error_reporter, "input->type = 0x%d", input->type);
 
 //////////////////////////////////////////////////////////////////////////////////
-  TfLiteTensor* output = interpreter->output(0);
+  TfLiteTensor* output = interpreter->output (0);
 
-  TF_LITE_REPORT_ERROR(error_reporter, "output->dims->size = %d", output->dims->size);
-  for (int i = 0; i < output->dims->size; i ++)
+  TF_LITE_REPORT_ERROR(error_reporter, "output->dims->size = %d",
+                       output->dims->size);
+  for (int i = 0; i < output->dims->size; i++)
   {
-    TF_LITE_REPORT_ERROR(error_reporter, "output->dims->data[%d] = %d", i, output->dims->data[i]);
+    TF_LITE_REPORT_ERROR(error_reporter, "output->dims->data[%d] = %d", i,
+                         output->dims->data[i]);
   }
   TF_LITE_REPORT_ERROR(error_reporter, "input->type = 0x%d", output->type);
 }
 
 // The name of this function is important for Arduino compatibility.
-void loop() {
-  printf("Tensorflow lite CNN CIFAR classificator\n");
-  // Get image from provider.
-  if (kTfLiteOk != GetImage(error_reporter,
-                            input->dims->data[1],
-                            input->dims->data[2],
-                            input->dims->data[3],
-                            input->data.f))
+void loop ()
+{
+  TfLiteStatus status;
+
+  printf ("Tensorflow lite CNN CIFAR classificator\n");
+
+  status = GetImage (error_reporter,
+                     input->dims->data[1],
+                     input->dims->data[2],
+                     input->dims->data[3],
+                     input->data.f);
+
+  if (status != kTfLiteOk)
   {
     TF_LITE_REPORT_ERROR(error_reporter, "Image capture failed.");
   }
 
-  // Run the model on this input and make sure it succeeds.
-  if (kTfLiteOk != interpreter->Invoke()) {
+  status = interpreter->Invoke ();
+
+  if (status != kTfLiteOk)
+  {
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
 
-  interpreter->get_eventLog();
+  interpreter->get_eventLog ();
 
-  TfLiteTensor* output = interpreter->output(0);
+  TfLiteTensor* output = interpreter->output (0);
 
-  for (int i = 0; i < output->dims->data[1]; i ++)
+  for (int i = 0; i < output->dims->data[1]; i++)
   {
-    printf("output->data.f[%d] = %f\n", i, output->data.f[i]);
-    //TF_LITE_REPORT_ERROR(error_reporter, "output->data.f[%d] = %f", i, output->data.f[i]);
+    printf ("output->data.f[%d] = %f\n", i, output->data.f[i]);
   }
 }

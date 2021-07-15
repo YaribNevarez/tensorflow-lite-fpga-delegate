@@ -253,16 +253,23 @@ TfLiteEvalTensor* MicroGraph::GetSubgraphOutput(int subgraph_idx,
 
 void MicroGraph::AllocateEventLogger (Event * parent, int subgraph_idx)
 {
-  if (event_array_ == nullptr)
+  if (event_array_ == nullptr && subgraph_allocations_ != nullptr)
   {
     const SubGraph* subgraph = (*subgraphs_)[subgraph_idx];
+    const SubgraphAllocations* subgraph_allocations = &subgraph_allocations_[subgraph_idx];
+    const TfLiteRegistration* registration = nullptr;
+    const char* op_name = nullptr;
+
     event_array_len_ = subgraph->operators ()->size ();
 
     event_array_ = (Event**) malloc (sizeof(Event*) * event_array_len_);
 
     for (size_t i = 0; i < event_array_len_; ++i)
     {
-      event_array_[i] = Event_new (parent, EVENT_LAYER, (void *) "Layer");
+      registration = subgraph_allocations->node_and_registrations[i].registration;
+
+      op_name = OpNameFromRegistration (registration);
+      event_array_[i] = Event_new (parent, EVENT_LAYER, (void *) op_name);
     }
   }
 }
