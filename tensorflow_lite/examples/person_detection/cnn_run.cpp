@@ -62,7 +62,7 @@ void setup ()
 
   // Map the model into a usable data structure. This doesn't involve any
   // copying or parsing, it's a very lightweight operation.
-  model = tflite::GetModel (g_person_detect_model_data);
+  model = tflite::GetModel (cifar_cnn_tflite);
   if (model->version () != TFLITE_SCHEMA_VERSION)
   {
     TF_LITE_REPORT_ERROR(error_reporter,
@@ -119,10 +119,15 @@ void setup ()
 void loop ()
 {
   TfLiteStatus status;
+  static int image_index = 0;
 
-  printf ("Tensorflow lite CNN CIFAR classificator\n");
+  if (10 <= image_index)
+  {
+    image_index = 0;
+  }
 
   status = GetImage (error_reporter,
+                     image_index,
                      input->dims->data[1],
                      input->dims->data[2],
                      input->dims->data[3],
@@ -133,6 +138,7 @@ void loop ()
     TF_LITE_REPORT_ERROR(error_reporter, "Image capture failed.");
   }
 
+
   status = interpreter->Invoke ();
 
   if (status != kTfLiteOk)
@@ -140,12 +146,12 @@ void loop ()
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
 
+
   interpreter->get_eventLog ();
 
   TfLiteTensor* output = interpreter->output (0);
 
-  for (int i = 0; i < output->dims->data[1]; i++)
-  {
-    printf ("output->data.f[%d] = %f\n", i, output->data.f[i]);
-  }
+  RespondToDetection (error_reporter, output, image_index);
+
+  image_index++;
 }

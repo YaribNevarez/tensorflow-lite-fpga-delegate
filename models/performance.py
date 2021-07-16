@@ -5,9 +5,9 @@ fig, (ax1, ax2) = plt.subplots(2, 1)
 
 fig.suptitle('Performance')
 
-begin   = np.array([0.000, 0.004, 210.877, 2254.415, 2261.413, 3240.436, 5187.931, 5191.439, 6083.089, 7860.954, 7862.706, 7862.869, 7873.943, 7874.006])
-latency = np.array([7874.017, 210.871, 2043.537, 6.997, 979.021, 1947.493, 3.507, 891.648, 1777.862, 1.748, 0.161, 11.072, 0.060, 0.010])
-event   = ["Interpreter", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer"]
+begin   = np.array([0.000, 0.002, 210.872, 2254.418, 2261.415, 3240.497, 5188.016, 5191.525, 6083.184, 7861.031, 7862.783, 7862.945, 7874.015, 7874.079])
+latency = np.array([7874.091, 210.866, 2043.545, 6.995, 979.081, 1947.517, 3.508, 891.656, 1777.844, 1.749, 0.159, 11.067, 0.061, 0.009])
+event   = ["Interpreter", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX"]
 colors = ["#1864ab", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9"]
 
 
@@ -23,11 +23,11 @@ ax1.tick_params(axis='both', which='minor', labelsize=1)
 plt.xlabel("Schedule (ms)")
 plt.ylabel("Task")
 
-data = [[ 0.004, 210.875, 2254.420, 2261.417, 3240.442, 5187.980, 5191.487, 6083.137, 7860.996, 7862.748, 7862.910, 7874.042, 7874.106],
-        [ 210.869, 2043.543, 6.995, 979.024, 1947.536, 3.506, 891.648, 1777.855, 1.749, 0.160, 11.129, 0.061, 0.010],
+data = [[ 0.002, 210.872, 2254.418, 2261.415, 3240.497, 5188.016, 5191.525, 6083.184, 7861.031, 7862.783, 7862.945, 7874.015, 7874.079],
+        [ 210.866, 2043.545, 6.995, 979.081, 1947.517, 3.508, 891.656, 1777.844, 1.749, 0.159, 11.067, 0.061, 0.009],
         [ 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000]]
 
-columns = ("Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer", "Layer")
+columns = ("CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX")
 rows = ["Hardware", "Software", "II OFFSET"]
 
 # Get some pastel shades for the colors

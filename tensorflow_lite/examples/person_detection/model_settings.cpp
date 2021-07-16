@@ -15,7 +15,16 @@ limitations under the License.
 
 #include "model_settings.h"
 
-const char* kCategoryLabels[kCategoryCount] = {
-    "notperson",
-    "person",
+const char * CifarClassLabels[] =
+{
+  "AIRPLANE",
+  "AUTOMOBILE",
+  "BIRD",
+  "CAT",
+  "DEER",
+  "DOG",
+  "FROG",
+  "HORSE",
+  "SHIP",
+  "TRUCK"
 };

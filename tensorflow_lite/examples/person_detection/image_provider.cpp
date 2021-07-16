@@ -18,14 +18,45 @@ limitations under the License.
 #include "model_settings.h"
 
 extern unsigned char airplane[];
+extern unsigned char automobile[];
+extern unsigned char bird[];
 extern unsigned char cat[];
+extern unsigned char deer[];
+extern unsigned char dog[];
 extern unsigned char frog[];
+extern unsigned char horse[];
 extern unsigned char ship[];
+extern unsigned char truck[];
 
-TfLiteStatus GetImage(tflite::ErrorReporter* error_reporter, int image_width,
-                      int image_height, int channels, float * image_data) {
-  for (int i = 0; i < image_width * image_height * channels; ++i) {
-    image_data[i] = (cat[i])/255.0;
+unsigned char * images[kCategoryCount] =
+{
+    airplane,
+    automobile,
+    bird,
+    cat,
+    deer,
+    dog,
+    frog,
+    horse,
+    ship,
+    truck
+};
+
+TfLiteStatus GetImage (tflite::ErrorReporter* error_reporter,
+                       int image_index,
+                       int image_width,
+                       int image_height,
+                       int channels,
+                       float * image_data)
+{
+  const size_t image_size = image_width * image_height * channels * sizeof(char);
+
+  TF_LITE_REPORT_ERROR(error_reporter, "Image: %s", CifarClassLabels[image_index]);
+
+  for (size_t i = 0; i < image_size; ++i)
+  {
+    image_data[i] = images[image_index][i] / 255.0;
   }
+
   return kTfLiteOk;
 }
