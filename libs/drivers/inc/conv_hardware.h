@@ -12,8 +12,8 @@ extern "C" {
 #endif
 
 /***************************** Include Files *********************************/
-#include "sbs_hardware.h"
-#include "xsbs_accelerator_unit.h"
+#include "hardware.h"
+#include "xconv.h"
 /***************** Macros (Inline Functions) Definitions *********************/
 
 /**************************** Type Definitions *******************************/
@@ -24,7 +24,7 @@ extern "C" {
 
 /************************** Function Prototypes ******************************/
 
-extern SbsHardware SbsHardware_custom;
+extern Hardware Conv_hardware;
 
 #ifdef __cplusplus
 }

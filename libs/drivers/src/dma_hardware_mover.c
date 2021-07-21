@@ -46,7 +46,7 @@ static int DMAHardware_Initialize (void * instance, uint16_t deviceId)
   if (dmaConfig == NULL)
     return XST_FAILURE;
 
-  status = XAxiDma_CfgInitialize (instance, dmaConfig);
+  status = XAxiDma_CfgInitialize ((XAxiDma*) instance, dmaConfig);
 
   ASSERT(status == XST_SUCCESS)
 
@@ -83,13 +83,13 @@ static void DMAHardware_InterruptClear(void * instance,
 static DMAIRQMask DMAHardware_InterruptGetEnabled (void * instance,
                                                    DMATransferDirection direction)
 {
-  return XAxiDma_ReadReg (((XAxiDma* )instance)->RegBase + (XAXIDMA_RX_OFFSET * direction), XAXIDMA_CR_OFFSET) & XAXIDMA_IRQ_ALL_MASK;
+  return DMA_IRQ_IOC;//(DMAIRQMask) (XAxiDma_ReadReg (((XAxiDma* )instance)->RegBase + (XAXIDMA_RX_OFFSET * direction), XAXIDMA_CR_OFFSET) & XAXIDMA_IRQ_ALL_MASK);
 }
 
 static DMAIRQMask DMAHardware_InterruptGetStatus (void * instance,
                                                   DMATransferDirection direction)
 {
-  return XAxiDma_IntrGetIrq ((XAxiDma* )instance, direction);
+  return DMA_IRQ_IOC;//XAxiDma_IntrGetIrq ((XAxiDma* )instance, direction);
 }
 
 void DMAHardware_Reset (void * instance)
@@ -114,8 +114,8 @@ static uint32_t  DMAHardware_InterruptSetHandler (void *instance,
 
 DMAHardware DMAHardware_mover =
 {
-  .new =                  DMAHardware_new,
-  .delete =               DMAHardware_delete,
+  .new_ =                  DMAHardware_new,
+  .delete_ =               DMAHardware_delete,
   .Initialize =           DMAHardware_Initialize,
   .Move = (uint32_t (*) (void *, void *, uint32_t, DMATransferDirection)) XAxiDma_SimpleTransfer,
   .InterruptEnable =      DMAHardware_InterruptEnable,

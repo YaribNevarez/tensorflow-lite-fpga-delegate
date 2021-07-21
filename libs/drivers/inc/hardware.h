@@ -15,36 +15,24 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-#include <result.h>
 #include "gic.h"
 
 #include "xil_types.h"
+#include "xstatus.h"
 /***************** Macros (Inline Functions) Definitions *********************/
 
 /**************************** Type Definitions *******************************/
 
 typedef enum
 {
-  SBS_HW_INITIALIZE,
-  SBS_HW_INFERENCE
-} SbsHwMode;
+  HW_INITIALIZE,
+  HW_INFERENCE
+} HardwareMode;
 
 typedef struct
 {
-  int layerSize;
-  int kernelSize;
-  int vectorSize;
-  float epsilon;
-
-  int weightRows;
-  int weightColumns;
-  int weightDepth;
-} SbsHardwareProfile;
-
-typedef struct
-{
-  void *    (*new)(void);
-  void      (*delete)(void ** InstancePtr);
+  void *    (*new_)(void);
+  void      (*delete_)(void ** InstancePtr);
 
   int       (*Initialize) (void *InstancePtr, u16 deviceId);
   void      (*Start)      (void *InstancePtr);
@@ -55,20 +43,10 @@ typedef struct
   void      (*DisableAutoRestart) (void *InstancePtr);
   uint32_t  (*Get_return) (void *InstancePtr);
 
-  void      (*Set_mode)       (void *InstancePtr, SbsHwMode mode);
-  uint32_t  (*Get_mode)       (void *InstancePtr);
-  void      (*Set_flags)      (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_flags)      (void *InstancePtr);
-  void      (*Set_layerSize)  (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_layerSize)  (void *InstancePtr);
-  void      (*Set_kernelSize) (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_kernelSize) (void *InstancePtr);
-  void      (*Set_vectorSize) (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_vectorSize) (void *InstancePtr);
-  void      (*Set_epsilon)    (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_epsilon)    (void *InstancePtr);
-  void      (*Set_debug)      (void *InstancePtr, uint32_t Data);
-  uint32_t  (*Get_debug)      (void *InstancePtr);
+  void      (*Set_batches) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_batches) (void *InstancePtr);
+  void      (*Set_mode)    (void *InstancePtr, uint32_t Data);
+  uint32_t  (*Get_mode)    (void *InstancePtr);
 
   void      (*InterruptGlobalEnable)  (void *InstancePtr);
   void      (*InterruptGlobalDisable) (void *InstancePtr);
@@ -82,7 +60,7 @@ typedef struct
                                        uint32_t ID,
                                        ARM_GIC_InterruptHandler handler,
                                        void * data);
-} SbsHardware;
+} Hardware;
 
 /************************** Constant Definitions *****************************/
 

@@ -15,7 +15,6 @@ extern "C" {
 #include <stdint.h>
 #include <stddef.h>
 
-#include <result.h>
 #include <gic.h>
 
 #include "xaxidma.h"
@@ -40,8 +39,8 @@ typedef enum
 
 typedef struct
 {
-  void *    (*new)              (void);
-  void      (*delete)           (void ** instance_ptr);
+  void *    (*new_)              (void);
+  void      (*delete_)           (void ** instance_ptr);
 
   int       (*Initialize)       (void * instance, u16 deviceId);
 

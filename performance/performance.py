@@ -5,10 +5,10 @@ fig, (ax1, ax2) = plt.subplots(2, 1)
 
 fig.suptitle('Performance')
 
-begin   = np.array([0.000, 0.002, 210.872, 2254.418, 2261.415, 3240.497, 5188.016, 5191.525, 6083.184, 7861.031, 7862.783, 7862.945, 7874.015, 7874.079])
-latency = np.array([7874.091, 210.866, 2043.545, 6.995, 979.081, 1947.517, 3.508, 891.656, 1777.844, 1.749, 0.159, 11.067, 0.061, 0.009])
-event   = ["Interpreter", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX"]
-colors = ["#1864ab", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9"]
+begin   = np.array([0.000, 0.001, 0.001, 0.003, 1.569, 1.572, 1.57])
+latency = np.array([6.820, 6.818, 6.816, 1.566, 5.174, 0.937, 5.251])
+event   = ["Interpreter", "CONV_2D_SW", "CONV_2D_HW", "FLUSH", "TX_HW", "FETCH", "RX_HW"]
+colors = ["#1864ab", "#4a98c9", "#94c4df", "#4a98c9", "#94c4df", "#4a98c9", "#94c4df"]
 
 
 ax1.barh(range(len(begin)),  latency, left=begin, color=colors)
@@ -23,11 +23,11 @@ ax1.tick_params(axis='both', which='minor', labelsize=1)
 plt.xlabel("Schedule (ms)")
 plt.ylabel("Task")
 
-data = [[ 0.002, 210.872, 2254.418, 2261.415, 3240.497, 5188.016, 5191.525, 6083.184, 7861.031, 7862.783, 7862.945, 7874.015, 7874.079],
-        [ 210.866, 2043.545, 6.995, 979.081, 1947.517, 3.508, 891.656, 1777.844, 1.749, 0.159, 11.067, 0.061, 0.009],
-        [ 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000]]
+data = [[ 0.001, 0.003, 1.572],
+        [ 6.818, 1.566, 0.937],
+        [ 6.816, 5.174, 5.251]]
 
-columns = ("CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX")
+columns = ("CONV_2D_SW", "FLUSH", "FETCH")
 rows = ["Hardware", "Software", "II OFFSET"]
 
 # Get some pastel shades for the colors
