@@ -101,7 +101,7 @@ static void Accelerator_rxInterruptHandler (void * data)
 }
 
 const void * baseAddress = (const void *) (XPAR_PS7_DDR_0_S_AXI_BASEADDR + 0x31000000);
-const size_t buffer_size = 1024*1024;
+size_t buffer_size = 1024*1024;
 
 int Dma_transaction (void * dmaHardware, void * tx_buffer, size_t tx_buffer_size,
                      void * rx_buffer, size_t rx_buffer_size)
@@ -126,6 +126,7 @@ int Dma_transaction (void * dmaHardware, void * tx_buffer, size_t tx_buffer_size
     Event_start (dma_rx_event_);
     status = DMAHardware_mover.Move (dmaHardware, (void *) rx_buffer,
                                      rx_buffer_size, HARDWARE_TO_MEMORY);
+    while (flag_ != 2);
     Xil_DCacheInvalidateRange ((INTPTR) rx_buffer, rx_buffer_size);
     Event_stop (dma_fetch_event_);
   }
@@ -255,21 +256,35 @@ int Conv_transaction (void)
                            XPAR_FABRIC_AXI_DMA_0_S2MM_INTROUT_INTR,
                            Accelerator_rxInterruptHandler);
 
-  status = Conv_hardware.Get_mode (conv);
-  Conv_hardware.Set_mode (conv, 1);
+ // output_depth * filter_height * filter_width * input_depth
+  Conv_hardware.Set_input_height (conv, 32);
+  Conv_hardware.Set_input_width (conv, 32);
+  Conv_hardware.Set_input_depth (conv, 3);       ////3
+  Conv_hardware.Set_filter_height (conv, 3);     ////3
+  Conv_hardware.Set_filter_width (conv, 3);      ////3
+  Conv_hardware.Set_output_height (conv, 32);
+  Conv_hardware.Set_output_width (conv, 32);
+  Conv_hardware.Set_output_depth (conv, 32);      ////32
+
+  // 32 * 3 * 3 * 3
+  buffer_size = Conv_hardware.Get_output_depth (conv)
+              * Conv_hardware.Get_filter_height (conv)
+              * Conv_hardware.Get_filter_width (conv)
+              * Conv_hardware.Get_input_depth (conv)
+              * sizeof(float);
+
+  float * tx_buffer = (float *) (baseAddress + buffer_size);
+  float * rx_buffer = (float *) baseAddress;
+
+  for (size_t i = 0; i < buffer_size / sizeof(float); i ++)
+  {
+    tx_buffer[i] = float(i);
+  }
 
   //Conv_hardware.Set_batches (conv, buffer_size / sizeof(int));
   Conv_hardware.Set_batches (conv, (buffer_size / sizeof(int)) / (2));
 
   status = Conv_hardware.Get_batches (conv);
-
-  int * rx_buffer = (int *) baseAddress;
-  int * tx_buffer = (int *) (baseAddress + buffer_size);
-
-  for (size_t i = 0; i < (buffer_size / sizeof(int)); i++)
-  {
-    tx_buffer[i] = i;
-  }
 
   memset (rx_buffer, 0, buffer_size);
   Xil_DCacheFlushRange ((UINTPTR) rx_buffer, buffer_size);
@@ -278,6 +293,7 @@ int Conv_transaction (void)
 
   conv_flag_ = 0;
 
+  Conv_hardware.Set_mode (conv, 0);
   Event_start (interpreter_event_);
   Event_start (conv_sw_event_);
   Event_start (conv_hw_event_);
@@ -285,9 +301,32 @@ int Conv_transaction (void)
 
   status = Dma_transaction (dmaHardware,
                             tx_buffer, buffer_size,
+                            nullptr, 0);
+
+  while (!Conv_hardware.IsDone (conv));
+
+  conv_flag_ = 0;
+
+  Conv_hardware.Set_mode (conv, 1);
+  Event_start (interpreter_event_);
+  Event_start (conv_sw_event_);
+  Event_start (conv_hw_event_);
+  Conv_hardware.Start (conv);
+
+  status = Dma_transaction (dmaHardware,
+                            nullptr, 0,
                             rx_buffer, buffer_size);
 
   while (!Conv_hardware.IsDone (conv));
+
+
+  for (size_t i = 0; i < buffer_size / sizeof(float); i ++)
+  {
+    if (tx_buffer[i] != rx_buffer[i])
+    {
+      printf ("Test fail [%d] %f != %f!\n", i, tx_buffer[i], rx_buffer[i]);
+    }
+  }
 
 
 

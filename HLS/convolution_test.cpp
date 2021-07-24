@@ -18,6 +18,7 @@ int main (void)
   int output_height = 32;
   int output_width = 32;
   int output_depth = 32;
+  int debug;
   int mode = 0;
   hls::stream<StreamChannel> stream_in ("stream_in");
   hls::stream<StreamChannel> stream_out ("stream_out");
@@ -35,6 +36,7 @@ int main (void)
         output_width,
         output_depth,
         mode,
+        &debug,
         stream_in,
         stream_out);
 

@@ -21,6 +21,7 @@ extern "C" {
 #include "xstatus.h"
 /***************** Macros (Inline Functions) Definitions *********************/
 
+
 /**************************** Type Definitions *******************************/
 
 typedef enum
@@ -45,6 +46,24 @@ typedef struct
 
   void      (*Set_batches) (void *InstancePtr, u32 Data);
   uint32_t  (*Get_batches) (void *InstancePtr);
+
+  void      (*Set_input_height) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_input_height) (void *InstancePtr);
+  void      (*Set_input_width) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_input_width) (void *InstancePtr);
+  void      (*Set_input_depth) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_input_depth) (void *InstancePtr);
+  void      (*Set_filter_height) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_filter_height) (void *InstancePtr);
+  void      (*Set_filter_width) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_filter_width) (void *InstancePtr);
+  void      (*Set_output_height) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_output_height) (void *InstancePtr);
+  void      (*Set_output_width) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_output_width) (void *InstancePtr);
+  void      (*Set_output_depth) (void *InstancePtr, u32 Data);
+  uint32_t  (*Get_output_depth) (void *InstancePtr);
+
   void      (*Set_mode)    (void *InstancePtr, uint32_t Data);
   uint32_t  (*Get_mode)    (void *InstancePtr);
 

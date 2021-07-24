@@ -34,6 +34,7 @@ void conv (int batches,
            int output_width,
            int output_depth,
            int mode,
+           int * debug,
            hls::stream<StreamChannel> &stream_in,
            hls::stream<StreamChannel> &stream_out);
 
