@@ -1,119 +1,384 @@
 #include "convolution.h"
 
+#define CONV_PROFILE_NUM_WORDS ((sizeof(ConvProfile)/(DMA_CHANNEL_WIDTH/8)) + (0<(sizeof(ConvProfile)%(DMA_CHANNEL_WIDTH/8))))
+
+#define CONV_FILTER_BUFFER_SIZE 128000
+#define CONV_BIAS_BUFFER_SIZE   512
+#define CONV_INPUT_BUFFER_SIZE  4096
+#define CONV_OUTPUT_BUFFER_SIZE 8
+
+static ConvProfile profile_instance_;
+static float filter_instance_[CONV_FILTER_BUFFER_SIZE];
+static float bias_instance_[CONV_BIAS_BUFFER_SIZE];
+static float input_instance_[CONV_INPUT_BUFFER_SIZE];
+static float output_instance_[CONV_OUTPUT_BUFFER_SIZE];
+
+static StreamChannel channel_in;
+static StreamChannel channel_out;
+
+template <typename T>
+inline T ActivationFunctionWithMinMax(T x, T output_activation_min,
+                                      T output_activation_max) {
+  using std::max;
+  using std::min;
+  return min(max(x, output_activation_min), output_activation_max);
+}
+
+#define FlatSize(shape)               ((shape)->dims_[0] * (shape)->dims_[1] * (shape)->dims_[2] * (shape)->dims_[3])
+
+#define Offset(shape, i0, i1, i2, i3) ((((i0) * (shape)->dims_[1] + i1) * (shape)->dims_[2] + (i2)) * (shape)->dims_[3] + (i3))
+
 template<typename T>
-  static void convolution_strm (int batches,
-                                int input_height, int input_width, int input_depth,
-                                int filter_height, int filter_width,
-                                int output_height, int output_width, int output_depth,
-                                hls::stream<StreamChannel> &stream_in, hls::stream<StreamChannel> &stream_out,
-                                T *filter)
+  static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
+                                    hls::stream<StreamChannel> &stream_out,
+                                    int * debug)
+{
+  ConvProfile * profile = &profile_instance_;
+
+  TensorShape * input_shape = &profile->input_shape_;
+  int batches = input_shape->dims_[0];
+  int input_height = input_shape->dims_[1];
+  int input_width = input_shape->dims_[2];
+  int input_depth = input_shape->dims_[3];
+  float * input_data = input_instance_;
+
+  TensorShape * filter_shape = &profile->filter_shape_;
+  int filter_height = filter_shape->dims_[1];
+  int filter_width = filter_shape->dims_[2];
+  float * filter_data = filter_instance_;
+
+  TensorShape * output_shape = &profile->output_shape_;
+  int output_height = output_shape->dims_[1];
+  int output_width = output_shape->dims_[2];
+  int output_depth = output_shape->dims_[3];
+  float * output_data = output_instance_;
+
+  TensorShape * bias_shape = &profile->bias_shape_;
+  float * bias_data = bias_instance_;
+  bool bias_data_enable = (bias_shape->dims_[0] == output_depth);
+
+  int stride_height = profile->parameters_.stride_.height_;
+  int stride_width = profile->parameters_.stride_.width_;
+
+  int pad_height = profile->parameters_.padding_.height_;
+  int pad_width = profile->parameters_.padding_.width_;
+
+  int dilation_height_factor = profile->parameters_.dilation_.height_;
+  int dilation_width_factor = profile->parameters_.dilation_.height_;
+
+  float output_activation_max = profile->parameters_.activation_.max_;
+  float output_activation_min = profile->parameters_.activation_.min_;
+
+  for (int batch = 0; batch < batches; ++batch)
   {
-    StreamChannel channel_in;
-    StreamChannel channel_out;
-
-    for (int i = 0; i < batches; i++)
+    for (int out_y = 0; out_y < output_height; ++out_y)
     {
-#pragma HLS pipeline
-      channel_in = stream_in.read ();
+      const int in_y_origin = (out_y * stride_height) - pad_height;
+      for (int out_x = 0; out_x < output_width; ++out_x)
+      {
+        const int in_x_origin = (out_x * stride_width) - pad_width;
+        for (int out_channel = 0; out_channel < output_depth; ++out_channel)
+        {
+          float total = 0.f;
+          for (int filter_y = 0; filter_y < filter_height; ++filter_y)
+          {
+            const int in_y = in_y_origin + dilation_height_factor * filter_y;
+            for (int filter_x = 0; filter_x < filter_width; ++filter_x)
+            {
+              const int in_x = in_x_origin + dilation_width_factor * filter_x;
 
-      channel_out.data = channel_in.data * 2;
-      channel_out.keep = channel_in.keep;
-      channel_out.strb = channel_in.strb;
-      channel_out.user = channel_in.user;
-      channel_out.last = channel_in.last;
-      channel_out.id = channel_in.id;
-      channel_out.dest = channel_in.dest;
+              // Zero padding by omitting the areas outside the image.
+              const bool is_point_inside_image = (in_x >= 0)
+                  && (in_x < input_width) && (in_y >= 0)
+                  && (in_y < input_height);
 
-      stream_out.write (channel_out);
+              if (!is_point_inside_image)
+              {
+                continue;
+              }
+
+              for (int in_channel = 0; in_channel < input_depth; ++in_channel)
+              {
+                float input_value = input_data[Offset (input_shape, batch, in_y,
+                                                       in_x, in_channel)];
+                float filter_value = filter_data[Offset (filter_shape,
+                                                         out_channel, filter_y,
+                                                         filter_x, in_channel)];
+                total += (input_value * filter_value);
+              }
+            }
+          }
+          float bias_value = 0.0f;
+          if (bias_data_enable)
+          {
+            bias_value = bias_data[out_channel];
+          }
+          output_data[Offset (output_shape, batch, out_y, out_x, out_channel)] =
+              ActivationFunctionWithMinMax (total + bias_value,
+                                            output_activation_min,
+                                            output_activation_max);
+        }
+      }
     }
   }
 
+  return 0;
+}
 
-void conv (int batches,
-           int input_height,
-           int input_width,
-           int input_depth,
-           int filter_height,
-           int filter_width,
-           int output_height,
-           int output_width,
-           int output_depth,
-           int mode,
-           int * debug,
-           hls::stream<StreamChannel> &stream_in,
-           hls::stream<StreamChannel> &stream_out)
+static void Convolution_loadProfile (hls::stream<StreamChannel> &stream_in,
+                                     hls::stream<StreamChannel> &stream_out,
+                                     int * debug)
 {
-#pragma HLS INTERFACE s_axilite port=batches bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=input_height bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=input_width bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=input_depth bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=filter_height bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=filter_width bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=output_height bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=output_width bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=output_depth bundle=CRTL_BUS
-#pragma HLS INTERFACE s_axilite port=mode bundle=CRTL_BUS
+  // stride_
+  channel_in = stream_in.read ();
+  profile_instance_.parameters_.stride_.height_   = channel_in.data;
+  profile_instance_.parameters_.stride_.width_    = channel_in.data >> 32;
+
+  // dilation_
+  channel_in = stream_in.read ();
+  profile_instance_.parameters_.dilation_.height_ = channel_in.data;
+  profile_instance_.parameters_.dilation_.width_  = channel_in.data >> 32;
+
+  // padding_
+  channel_in = stream_in.read ();
+  profile_instance_.parameters_.padding_.height_  = channel_in.data;
+  profile_instance_.parameters_.padding_.width_   = channel_in.data >> 32;
+
+  // activation_
+  channel_in = stream_in.read ();
+  profile_instance_.parameters_.activation_.max_ = channel_in.data;
+  profile_instance_.parameters_.activation_.min_  = channel_in.data >> 32;
+
+  // input_shape_
+  channel_in = stream_in.read ();
+  profile_instance_.input_shape_.dims_[0] = channel_in.data;
+  profile_instance_.input_shape_.dims_[1] = channel_in.data >> 32;
+  channel_in = stream_in.read ();
+  profile_instance_.input_shape_.dims_[2] = channel_in.data;
+  profile_instance_.input_shape_.dims_[3] = channel_in.data >> 32;
+
+  // filter_shape_
+  channel_in = stream_in.read ();
+  profile_instance_.filter_shape_.dims_[0] = channel_in.data;
+  profile_instance_.filter_shape_.dims_[1] = channel_in.data >> 32;
+  channel_in = stream_in.read ();
+  profile_instance_.filter_shape_.dims_[2] = channel_in.data;
+  profile_instance_.filter_shape_.dims_[3] = channel_in.data >> 32;
+
+  // bias_shape_
+  channel_in = stream_in.read ();
+  profile_instance_.bias_shape_.dims_[0] = channel_in.data;
+  profile_instance_.bias_shape_.dims_[1] = channel_in.data >> 32;
+  channel_in = stream_in.read ();
+  profile_instance_.bias_shape_.dims_[2] = channel_in.data;
+  profile_instance_.bias_shape_.dims_[3] = channel_in.data >> 32;
+
+  // output_shape_
+  channel_in = stream_in.read ();
+  profile_instance_.output_shape_.dims_[0] = channel_in.data;
+  profile_instance_.output_shape_.dims_[1] = channel_in.data >> 32;
+  channel_in = stream_in.read ();
+  profile_instance_.output_shape_.dims_[2] = channel_in.data;
+  profile_instance_.output_shape_.dims_[3] = channel_in.data >> 32;
+}
+
+static void Convolution_fetchProfile (hls::stream<StreamChannel> &stream_in,
+                                     hls::stream<StreamChannel> &stream_out,
+                                     int * debug)
+{
+  // stride_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.stride_.height_) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.stride_.width_) << 32);
+  stream_out.write (channel_out);
+
+  // dilation_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.dilation_.height_) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.dilation_.width_) << 32);
+  stream_out.write (channel_out);
+
+  // padding_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.padding_.height_) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.padding_.width_) << 32);
+  stream_out.write (channel_out);
+
+  // activation_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.activation_.max_) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.parameters_.activation_.min_) << 32);
+  stream_out.write (channel_out);
+
+  // input_shape_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.input_shape_.dims_[0]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.input_shape_.dims_[1]) << 32);
+  stream_out.write (channel_out);
+
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.input_shape_.dims_[2]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.input_shape_.dims_[3]) << 32);
+  stream_out.write (channel_out);
+
+  // filter_shape_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.filter_shape_.dims_[0]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.filter_shape_.dims_[1]) << 32);
+  stream_out.write (channel_out);
+
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.filter_shape_.dims_[2]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.filter_shape_.dims_[3]) << 32);
+  stream_out.write (channel_out);
+
+  // bias_shape_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.bias_shape_.dims_[0]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.bias_shape_.dims_[1]) << 32);
+  stream_out.write (channel_out);
+
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.bias_shape_.dims_[2]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.bias_shape_.dims_[3]) << 32);
+  stream_out.write (channel_out);
+
+  // output_shape_
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.output_shape_.dims_[0]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.output_shape_.dims_[1]) << 32);
+  stream_out.write (channel_out);
+
+  channel_out.data =
+  ((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.output_shape_.dims_[2]) |
+  (((ap_uint<DMA_CHANNEL_WIDTH>) profile_instance_.output_shape_.dims_[3]) << 32);
+  stream_out.write (channel_out);
+}
+
+static void Convolution_loadFilter (hls::stream<StreamChannel> &stream_in,
+                                    hls::stream<StreamChannel> &stream_out,
+                                    int * debug)
+{
+  Data temp_0;
+  Data temp_1;
+  static int filter_size = FlatSize (&profile_instance_.filter_shape_);
+  // CONV_LOAD_FILTER_LOOP
+  CONV_LOAD_FILTER_LOOP: for (int i = 0; i < filter_size; i += 2)
+  {
+#pragma HLS pipeline
+    channel_in = stream_in.read ();
+    temp_0.u32 = channel_in.data;
+    filter_instance_[i] = temp_0.f32;
+    temp_1.u32 = channel_in.data >> 32;
+    filter_instance_[i + 1] = temp_1.f32;
+  }
+}
+
+static void Convolution_loadBias (hls::stream<StreamChannel> &stream_in,
+                                  hls::stream<StreamChannel> &stream_out,
+                                  int * debug)
+{
+  Data temp_0;
+  Data temp_1;
+  static int bias_size = FlatSize (&profile_instance_.bias_shape_);
+  // CONV_LOAD_BIAS_LOOP
+  CONV_LOAD_BIAS_LOOP: for (int i = 0; i < bias_size; i += 2)
+  {
+#pragma HLS pipeline
+    channel_in = stream_in.read ();
+    temp_0.u32 = channel_in.data;
+    bias_instance_[i] = temp_0.f32;
+    temp_1.u32 = channel_in.data >> 32;
+    bias_instance_[i + 1] = temp_1.f32;
+  }
+}
+
+static void Convolution_fetchFilter (hls::stream<StreamChannel> &stream_in,
+                                     hls::stream<StreamChannel> &stream_out,
+                                     int * debug)
+{
+  Data temp_2;
+  Data temp_3;
+  static int filter_size = FlatSize (&profile_instance_.filter_shape_);
+  // CONV_LOAD_FILTER_LOOP
+  CONV_FETCH_FILTER_LOOP: for (int i = 0; i < filter_size; i += 2)
+  {
+#pragma HLS pipeline
+    temp_2.f32 = filter_instance_[i];
+    temp_3.f32 = filter_instance_[i + 1];
+
+    channel_out.data = ((((ap_uint<64> ) temp_3.u32) << 32) & 0xFFFFFFFF00000000) | ((ap_uint<64> ) temp_2.u32);
+    channel_out.last = filter_size <= i + 2;
+    stream_out.write (channel_out);
+  }
+}
+
+static void Convolution_fetchBias (hls::stream<StreamChannel> &stream_in,
+                                   hls::stream<StreamChannel> &stream_out,
+                                   int * debug)
+{
+  Data temp_2;
+  Data temp_3;
+  static int bias_size = FlatSize (&profile_instance_.bias_shape_);
+  // CONV_LOAD_BIAS_LOOP
+  CONV_FETCH_BIAS_LOOP: for (int i = 0; i < bias_size; i += 2)
+  {
+#pragma HLS pipeline
+    temp_2.f32 = bias_instance_[i];
+    temp_3.f32 = bias_instance_[i + 1];
+
+    channel_out.data = ((((ap_uint<64> ) temp_3.u32) << 32) & 0xFFFFFFFF00000000) | ((ap_uint<64> ) temp_2.u32);
+    channel_out.last = bias_size <= i + 2;
+    stream_out.write (channel_out);
+  }
+}
+
+int conv (ConvExecutionMode mode,
+          hls::stream<StreamChannel> &stream_in,
+          hls::stream<StreamChannel> &stream_out,
+          int * debug)
+{
+#pragma HLS INTERFACE s_axilite port=mode  bundle=CRTL_BUS
 #pragma HLS INTERFACE s_axilite port=debug bundle=CRTL_BUS
 
-#pragma HLS INTERFACE axis port=&stream_in
-#pragma HLS INTERFACE axis port=&stream_out
+#pragma HLS INTERFACE axis      port=stream_in
+#pragma HLS INTERFACE axis      port=stream_out
 
-#pragma HLS INTERFACE s_axilite port=return      bundle=CRTL_BUS
+#pragma HLS INTERFACE s_axilite port=return bundle=CRTL_BUS
 
 #pragma HLS DATAFLOW
 #pragma HLS INLINE region // bring loops in sub-functions to this DATAFLOW region
 
-  static float filter[120000] = {0};
-  static int filter_size = 0;
-
-  StreamChannel channel_in;
-  StreamChannel channel_out;
-  data_t temp_0;
-  data_t temp_1;
-  data_t temp_2;
-  data_t temp_3;
-
   channel_out.keep = -1;
   channel_out.strb = -1;
 
-  filter_size = output_depth * filter_height * filter_width * input_depth;
-
   switch (mode)
   {
-    case 0:
-      FILTER_LOAD: for (int i = 0; i < filter_size; i += 2)
-      {
-#pragma HLS pipeline
-        channel_in = stream_in.read ();
-        temp_0.u32 = channel_in.data;
-        filter[i] = temp_0.f32;
-        temp_1.u32 = channel_in.data >> 32;
-        filter[i + 1] = temp_1.f32;
-      }
+    case CONV_LOAD_PROFILE:
+      Convolution_loadProfile  (stream_in, stream_out, debug);
+      Convolution_loadFilter   (stream_in, stream_out, debug);
+      Convolution_loadBias     (stream_in, stream_out, debug);
       break;
-    case 1:
-      FILTER_FETCH: for (int i = 0; i < filter_size; i += 2)
-      {
-#pragma HLS pipeline
-        temp_2.f32 = filter[i];
-        temp_3.f32 = filter[i + 1];
-
-        channel_out.data = ((((ap_uint<64> ) temp_3.u32) << 32) & 0xFFFFFFFF00000000) | ((ap_uint<64> ) temp_2.u32);
-        channel_out.last = filter_size <= i + 2;
-        stream_out.write (channel_out);
-      }
+    case CONV_FETCH_PROFILE:
+      Convolution_fetchProfile (stream_in, stream_out, debug);
       break;
-    case 2:
-      convolution_strm<float> (batches,
-                                input_height, input_width, input_depth,
-                                filter_height, filter_width,
-                                output_height, output_width, output_depth,
-                                stream_in, stream_out,
-                                filter);
+    case CONV_LOAD_FILTER:
+      Convolution_loadFilter  (stream_in, stream_out, debug);
       break;
-    case 3:
+    case CONV_FETCH_FILTER:
+      Convolution_fetchFilter (stream_in, stream_out, debug);
       break;
-    default:;
+    case CONV_LOAD_BIAS:
+      Convolution_loadBias    (stream_in, stream_out, debug);
+      break;
+    case CONV_FETCH_BIAS:
+      Convolution_fetchBias   (stream_in, stream_out, debug);
+      break;
+    case CONV_EXECUTION:
+      Convolution_execution<float> (stream_in, stream_out, debug);
+      break;
   }
+
+  return 0;
 }
 
