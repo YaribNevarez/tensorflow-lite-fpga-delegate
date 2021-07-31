@@ -1,33 +1,23 @@
 /*
- * sbs_custom_hardware.h
+ * dma_vtbl.h
  *
- *  Created on: Jun 2nd, 2020
+ *  Created on: July 31st, 2021
  *      Author: Yarib Nevarez
  */
-#ifndef SBS_CUSTOM_HARDWARE_H_
-#define SBS_CUSTOM_HARDWARE_H_
+#ifndef DMA_VTBL_H_
+#define DMA_VTBL_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /***************************** Include Files *********************************/
-#include "hardware.h"
-#include "xconv.h"
+#include "processing_unit.h"
 /***************** Macros (Inline Functions) Definitions *********************/
 
 /**************************** Type Definitions *******************************/
 
 /************************** Constant Definitions *****************************/
-
+extern DMAHardwareVtbl DMAHardwareVtbl_;
 /************************** Variable Definitions *****************************/
 
 /************************** Function Prototypes ******************************/
 
-extern Hardware Conv_hardware;
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
-
-#endif /* SBS_CUSTOM_HARDWARE_H_ */
+#endif /* DMA_VTBL_H_ */

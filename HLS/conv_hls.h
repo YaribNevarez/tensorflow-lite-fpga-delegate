@@ -1,13 +1,11 @@
 #ifndef CONV_DEF_H_
 #define CONV_DEF_H_
 
-#include <stdint.h>
-#include <algorithm>
-
 #define DMA_CHANNEL_WIDTH 64
 
 typedef enum
 {
+  CONV_LOAD_PROFILE_PACKAGE,
   CONV_LOAD_PROFILE,
   CONV_FETCH_PROFILE,
   CONV_LOAD_FILTER,

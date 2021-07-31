@@ -1,31 +1,42 @@
 /*
- * dma_hardware_mover.h
+ * memory_manager.h
  *
- *  Created on: Mar 3rd, 2020
+ *  Created on: Feb 24th, 2020
  *      Author: Yarib Nevarez
  */
-#ifndef DMA_HARDWARE_MOVER_H_
-#define DMA_HARDWARE_MOVER_H_
+#ifndef LIBS_UTILITIES_MEMORY_MANAGER_H_
+#define LIBS_UTILITIES_MEMORY_MANAGER_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /***************************** Include Files *********************************/
-#include "dma_hardware.h"
+#include "stddef.h"
 /***************** Macros (Inline Functions) Definitions *********************/
 
 /**************************** Type Definitions *******************************/
+#pragma pack(push)  /* push current alignment to stack */
+#pragma pack(1)     /* set alignment to 1 byte boundary */
 
+typedef struct
+{
+  size_t baseAddress;
+  size_t highAddress;
+  size_t blockIndex;
+} MemoryBlock;
+
+#pragma pack(pop)   /* restore original alignment from stack */
 /************************** Constant Definitions *****************************/
-extern DMAHardware DMAHardware_mover;
+
 /************************** Variable Definitions *****************************/
 
 /************************** Function Prototypes ******************************/
 
+void * MemoryBlock_alloc(MemoryBlock * memory_def, size_t size);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif /* DMA_HARDWARE_MOVER_H_ */
+#endif /* LIBS_UTILITIES_MEMORY_MANAGER_H_ */

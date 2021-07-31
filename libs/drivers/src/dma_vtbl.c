@@ -1,11 +1,11 @@
 /*
- * dma_hardware_mover.h
+ * dma_vtbl.h
  *
- *  Created on: Mar 3rd, 2020
+ *  Created on: July 31st, 2021
  *      Author: Yarib Nevarez
  */
 /***************************** Include Files *********************************/
-#include "dma_hardware_mover.h"
+#include "dma_vtbl.h"
 #include "miscellaneous.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -112,7 +112,7 @@ static uint32_t  DMAHardware_InterruptSetHandler (void *instance,
   return status;
 }
 
-DMAHardware DMAHardware_mover =
+DMAHardwareVtbl DMAHardwareVtbl_ =
 {
   .new_ =                  DMAHardware_new,
   .delete_ =               DMAHardware_delete,
