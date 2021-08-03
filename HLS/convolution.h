@@ -6,7 +6,7 @@
 #include <hls_stream.h>
 #include <ap_int.h>
 #include "ap_axi_sdata.h"
-#include "conv_def.h"
+#include "conv_hls.h"
 
 typedef ap_axis<DMA_CHANNEL_WIDTH, 2, 5, 6> StreamChannel;
 

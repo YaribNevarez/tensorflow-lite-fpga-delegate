@@ -9,7 +9,6 @@
 #include "xil_cache.h"
 #include "miscellaneous.h"
 #include "event.h"
-#include "conv_hls.h"
 #include <limits>
 
 #include "dma_vtbl.h"

@@ -1,5 +1,5 @@
-#ifndef CONV_DEF_H_
-#define CONV_DEF_H_
+#ifndef CONV_HLS_H_
+#define CONV_HLS_H_
 
 #define DMA_CHANNEL_WIDTH 64
 
@@ -76,5 +76,5 @@ typedef struct
 } ConvProfile;
 
 
-#endif // CONV_DEF_H_
+#endif // CONV_HLS_H_
 

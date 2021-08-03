@@ -73,21 +73,21 @@ template<typename T>
 
   *debug = 7;
 
-  for (int batch = 0; batch < batches; ++batch)
+  CONV_OUTPUT_BATCH: for (int batch = 0; batch < batches; ++batch)
   {
-    for (int out_y = 0; out_y < output_height; ++out_y)
+    CONV_OUTPUT_ROW: for (int out_y = 0; out_y < output_height; ++out_y)
     {
       const int in_y_origin = (out_y * stride_height) - pad_height;
-      for (int out_x = 0; out_x < output_width; ++out_x)
+      CONV_OUTPUT_COL: for (int out_x = 0; out_x < output_width; ++out_x)
       {
         const int in_x_origin = (out_x * stride_width) - pad_width;
-        for (int out_channel = 0; out_channel < output_depth; ++out_channel)
+        CONV_OUTPUT_CHANNEL: for (int out_channel = 0; out_channel < output_depth; ++out_channel)
         {
           float total = 0.f;
-          for (int filter_y = 0; filter_y < filter_height; ++filter_y)
+          CONV_FILTER_ROW: for (int filter_y = 0; filter_y < filter_height; ++filter_y)
           {
             const int in_y = in_y_origin + dilation_height_factor * filter_y;
-            for (int filter_x = 0; filter_x < filter_width; ++filter_x)
+            CONV_FILTER_COL: for (int filter_x = 0; filter_x < filter_width; ++filter_x)
             {
               const int in_x = in_x_origin + dilation_width_factor * filter_x;
 
@@ -101,7 +101,7 @@ template<typename T>
                 continue;
               }
 
-              for (int in_channel = 0; in_channel < input_depth; ++in_channel)
+              CONV_FILTER_CHANNEL: for (int in_channel = 0; in_channel < input_depth; ++in_channel)
               {
                 float input_value = input_data[Offset (input_shape, batch, in_y,
                                                        in_x, in_channel)];
