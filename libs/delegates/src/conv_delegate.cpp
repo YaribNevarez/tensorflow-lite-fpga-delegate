@@ -153,21 +153,14 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
 static float StreamPeripheral_inputBuffer[1024*1024] = {0};
 static int StreamPeripheral_yOffset = 0;
 static int StreamPeripheral_lookupTable[32] = {0};
+static int StreamPeripheral_lookupTableRows[32] = {0};
 static int StreamPeripheral_lookupIndex = 0;
 static int StreamPeripheral_lookupLength = 0;
+static int StreamPeripheral_rowCount = 0;
 
 static int AXIStream_index = 0;
-
-
-//inline int Offset(const RuntimeShape& shape, int i0, int i1, int i2, int i3) {
-//  TFLITE_DCHECK_EQ(shape.DimensionsCount(), 4);
-//  const int* dims_data = reinterpret_cast<const int*>(shape.DimsDataUpTo5D());
-//  TFLITE_DCHECK(i0 >= 0 && i0 < dims_data[0]);
-//  TFLITE_DCHECK(i1 >= 0 && i1 < dims_data[1]);
-//  TFLITE_DCHECK(i2 >= 0 && i2 < dims_data[2]);
-//  TFLITE_DCHECK(i3 >= 0 && i3 < dims_data[3]);
-//  return ((i0 * dims_data[1] + i1) * dims_data[2] + i2) * dims_data[3] + i3;
-//}
+static int AXIStreamOut_index = 0;
+static float * AXIStreamOut_buffer = nullptr;
 
 float StreamPeripheral_inputData (const tflite::RuntimeShape& input_shape,
                                   int batch,
@@ -178,7 +171,14 @@ float StreamPeripheral_inputData (const tflite::RuntimeShape& input_shape,
   int lookupIndex;
   int i;
 
-  lookupIndex = in_y - StreamPeripheral_yOffset + StreamPeripheral_lookupIndex;
+  if (StreamPeripheral_lookupIndex < in_y)
+  {
+    lookupIndex = in_y - StreamPeripheral_yOffset + StreamPeripheral_lookupIndex;
+  }
+  else
+  {
+    lookupIndex = in_y;
+  }
 
   if (lookupIndex > StreamPeripheral_lookupLength)
     lookupIndex -= StreamPeripheral_lookupLength;
@@ -188,30 +188,33 @@ float StreamPeripheral_inputData (const tflite::RuntimeShape& input_shape,
   return StreamPeripheral_inputBuffer[i];
 }
 
-void StreamPeripheral_outputData (TensorShape output_shape,
-                                  int batch,
-                                  int out_y,
-                                  int out_x,
-                                  int out_channel)
+void StreamPeripheral_outputData (float output)
 {
-
+  AXIStreamOut_buffer[AXIStreamOut_index++] = output;
 }
 
-void StreamPeripheral_loadSlice (const float * input_data,
+void StreamPeripheral_initialize (const float * input_data,
                                  int input_depth,
                                  int input_width,
-                                 int filter_height)
+                                 int filter_height,
+                                 float * output_data)
 {
   int i = 0;
   AXIStream_index = 0;
+
+  AXIStreamOut_buffer = output_data;
+  AXIStreamOut_index = 0;
 
   StreamPeripheral_lookupLength = filter_height;
 
   StreamPeripheral_lookupIndex = StreamPeripheral_lookupLength - 1;
 
+  StreamPeripheral_rowCount = 0;
+
   for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
   {
     StreamPeripheral_lookupTable[row] = i;
+    StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
     for (int col = 0; col < input_width; col++)
     {
       for (int chan = 0; chan < input_depth; chan++)
@@ -233,6 +236,7 @@ void StreamPeripheral_loadSlice (const float * input_data,
 void StreamPeripheral_pushSlice (const float * input_data,
                                   int input_depth,
                                   int input_width,
+                                  int input_height,
                                   int filter_height,
                                   int in_y_origin)
 {
@@ -240,8 +244,9 @@ void StreamPeripheral_pushSlice (const float * input_data,
 
   StreamPeripheral_yOffset = in_y_origin;
 
-  if (0 <= StreamPeripheral_yOffset)
+  if (filter_height <= StreamPeripheral_yOffset + filter_height && StreamPeripheral_rowCount < input_height)
   {
+    StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
     for (int col = 0; col < input_width; col++)
     {
       for (int chan = 0; chan < input_depth; chan++)
@@ -251,7 +256,7 @@ void StreamPeripheral_pushSlice (const float * input_data,
       }
     }
 
-    if (StreamPeripheral_lookupIndex < filter_height - 1)
+    if (StreamPeripheral_lookupIndex + 1 < filter_height)
     {
       StreamPeripheral_lookupIndex++;
     }
@@ -295,10 +300,11 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
 
-  StreamPeripheral_loadSlice (input_data,
+  StreamPeripheral_initialize (input_data,
                               input_depth,
                               input_width,
-                              filter_height);
+                              filter_height,
+                              output_data);
 
   for (int batch = 0; batch < batches; ++batch) {
     for (int out_y = 0; out_y < output_height; ++out_y) {
@@ -307,6 +313,7 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
       StreamPeripheral_pushSlice (input_data,
                                   input_depth,
                                   input_width,
+                                  input_height,
                                   filter_height,
                                   in_y_origin);
 
@@ -341,10 +348,10 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
           if (bias_data) {
             bias_value = bias_data[out_channel];
           }
-          output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] =
+          StreamPeripheral_outputData(
               tflite::ActivationFunctionWithMinMax(total + bias_value,
                                            output_activation_min,
-                                           output_activation_max);
+                                           output_activation_max));
         }
       }
     }
