@@ -12,6 +12,7 @@
 #include "dma_vtbl.h"
 #include "conv_hls.h"
 #include "memory_manager.h"
+#include "miscellaneous.h"
 
 ConvFpgaDelegate::ConvFpgaDelegate()
 {
@@ -226,6 +227,11 @@ void StreamPeripheral_initialize (const float * input_data,
   }
 
   StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = i;
+
+  ASSERT (StreamPeripheral_lookupLength == filter_height);
+  ASSERT (StreamPeripheral_lookupIndex == StreamPeripheral_lookupLength - 1);
+  ASSERT (StreamPeripheral_lookupIndex == StreamPeripheral_rowCount);
+  ASSERT (AXIStream_index == StreamPeripheral_rowCount * input_depth * input_width);
 }
 
 //static float StreamPeripheral_inputBuffer[1024] = {0};
@@ -240,13 +246,14 @@ void StreamPeripheral_pushSlice (const float * input_data,
                                   int filter_height,
                                   int in_y_origin)
 {
-  int i = StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex];
-
-  StreamPeripheral_yOffset = in_y_origin;
-
-  if (filter_height <= StreamPeripheral_yOffset + filter_height && StreamPeripheral_rowCount < input_height)
+  if (0 <= in_y_origin && StreamPeripheral_rowCount < input_height)
   {
+    int i = StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex];
+
+    StreamPeripheral_yOffset = in_y_origin;
+
     StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
+
     for (int col = 0; col < input_width; col++)
     {
       for (int chan = 0; chan < input_depth; chan++)
@@ -256,7 +263,7 @@ void StreamPeripheral_pushSlice (const float * input_data,
       }
     }
 
-    if (StreamPeripheral_lookupIndex + 1 < filter_height)
+    if (StreamPeripheral_lookupIndex + 1 < StreamPeripheral_lookupLength)
     {
       StreamPeripheral_lookupIndex++;
     }
@@ -338,6 +345,10 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
               for (int in_channel = 0; in_channel < input_depth; ++in_channel) {
                 float input_value = StreamPeripheral_inputData(input_shape, batch, in_y,
                                                       in_x, in_channel);
+
+                ASSERT (input_value == input_data[Offset (input_shape, batch, in_y, in_x,
+                                          in_channel)]);
+
                 float filter_value = filter_data[Offset(
                     filter_shape, out_channel, filter_y, filter_x, in_channel)];
                 total += (input_value * filter_value);
