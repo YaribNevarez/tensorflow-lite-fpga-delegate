@@ -6,14 +6,11 @@
 
 #define CONV_FILTER_BUFFER_SIZE 128000
 #define CONV_BIAS_BUFFER_SIZE   512
-#define CONV_INPUT_BUFFER_SIZE  4096
 #define CONV_OUTPUT_BUFFER_SIZE 8
 
 static ConvProfile profile_instance_;
 static float filter_instance_[CONV_FILTER_BUFFER_SIZE];
 static float bias_instance_[CONV_BIAS_BUFFER_SIZE];
-static float input_instance_[CONV_INPUT_BUFFER_SIZE];
-static float output_instance_[CONV_OUTPUT_BUFFER_SIZE];
 
 static StreamChannel channel_in;
 static StreamChannel channel_out;
@@ -30,6 +27,164 @@ inline T ActivationFunctionWithMinMax(T x, T output_activation_min,
 
 #define Offset(shape, i0, i1, i2, i3) ((((i0) * (shape)->dims_[1] + i1) * (shape)->dims_[2] + (i2)) * (shape)->dims_[3] + (i3))
 
+///////////////////////////////////////////////////////////////////////////////
+
+static float StreamPeripheral_inputBuffer[3072] = {0};
+static int StreamPeripheral_yOffset = 0;
+static int StreamPeripheral_lookupTable[32] = {0};
+static int StreamPeripheral_lookupTableRows[32] = {0};
+static int StreamPeripheral_lookupIndex = 0;
+static int StreamPeripheral_lookupLength = 0;
+static int StreamPeripheral_rowCount = 0;
+
+static int AXIStream_index = 0;
+static float AXIStream_inputBuffer[2] = {0};
+static float AXIStream_outputBuffer[2] = {0};
+static int AXIStreamOut_index = 0;
+static int AXIStreamOut_indexLast = 0;
+
+
+float StreamPeripheral_inputData (TensorShape input_shape,
+                                  int batch,
+                                  int in_y,
+                                  int in_x,
+                                  int in_channel)
+{
+  int lookupIndex;
+  int i;
+
+  if (StreamPeripheral_lookupIndex < in_y)
+  {
+    lookupIndex = in_y - StreamPeripheral_yOffset + StreamPeripheral_lookupIndex;
+  }
+  else
+  {
+    lookupIndex = in_y;
+  }
+
+  if (lookupIndex > StreamPeripheral_lookupLength)
+    lookupIndex -= StreamPeripheral_lookupLength;
+
+  i = StreamPeripheral_lookupTable[lookupIndex] + input_shape.dims_[3]*in_x + in_channel;
+
+  return StreamPeripheral_inputBuffer[i];
+}
+
+void StreamPeripheral_outputData (hls::stream<StreamChannel> &stream_out, float output)
+{
+  Data temp_0;
+  Data temp_1;
+
+  AXIStream_outputBuffer[AXIStreamOut_index % 2] = output;
+  if (AXIStreamOut_index % 2 == 2 - 1)
+  {
+    temp_0.f32 = AXIStream_outputBuffer[0];
+    temp_1.f32 = AXIStream_outputBuffer[1];
+    channel_out.data =
+    ((ap_uint<DMA_CHANNEL_WIDTH>) temp_0.u32) |
+    (((ap_uint<DMA_CHANNEL_WIDTH>) temp_1.u32) << 32);
+    channel_out.last = (AXIStreamOut_index + 1) == AXIStreamOut_indexLast;
+    stream_out.write (channel_out);
+  }
+  AXIStreamOut_index ++;
+}
+
+void StreamPeripheral_initialize (hls::stream<StreamChannel> &stream_in,
+                                 int input_depth,
+                                 int input_width,
+                                 int filter_height,
+                                 int output_length)
+{
+  Data temp_0;
+  Data temp_1;
+
+  AXIStream_index = 0;
+
+  AXIStreamOut_index = 0;
+
+  AXIStreamOut_indexLast = output_length;
+
+  StreamPeripheral_lookupLength = filter_height;
+
+  StreamPeripheral_lookupIndex = StreamPeripheral_lookupLength - 1;
+
+  StreamPeripheral_rowCount = 0;
+
+  for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
+  {
+    StreamPeripheral_lookupTable[row] = AXIStream_index;
+    StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
+    for (int col = 0; col < input_width; col++)
+    {
+      for (int chan = 0; chan < input_depth; chan++)
+      {
+        if (AXIStream_index%2 == 0)
+        {
+          channel_in = stream_in.read ();
+          temp_0.u32 = channel_in.data;
+          temp_1.u32 = channel_in.data >> 32;
+
+          AXIStream_inputBuffer[0] = temp_0.f32;
+          AXIStream_inputBuffer[1] = temp_1.f32;
+        }
+        StreamPeripheral_inputBuffer[AXIStream_index] = AXIStream_inputBuffer[AXIStream_index%2];
+        AXIStream_index++;
+      }
+    }
+  }
+
+  StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = AXIStream_index;
+}
+
+void StreamPeripheral_pushSlice (hls::stream<StreamChannel> &stream_in,
+                                  int input_depth,
+                                  int input_width,
+                                  int input_height,
+                                  int filter_height,
+                                  int in_y_origin)
+{
+  Data temp_0;
+  Data temp_1;
+
+  if (0 <= in_y_origin && StreamPeripheral_rowCount < input_height)
+  {
+    int i = StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex];
+
+    StreamPeripheral_yOffset = in_y_origin;
+
+    StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
+
+    for (int col = 0; col < input_width; col++)
+    {
+      for (int chan = 0; chan < input_depth; chan++)
+      {
+        if (AXIStream_index%2 == 0)
+        {
+          channel_in = stream_in.read ();
+          temp_0.u32 = channel_in.data;
+          temp_1.u32 = channel_in.data >> 32;
+
+          AXIStream_inputBuffer[0] = temp_0.f32;
+          AXIStream_inputBuffer[1] = temp_1.f32;
+        }
+
+        StreamPeripheral_inputBuffer[i++] = AXIStream_inputBuffer[AXIStream_index%2];
+        AXIStream_index++;
+      }
+    }
+
+    if (StreamPeripheral_lookupIndex + 1 < StreamPeripheral_lookupLength)
+    {
+      StreamPeripheral_lookupIndex++;
+    }
+    else
+    {
+      StreamPeripheral_lookupIndex = 0;
+    }
+  }
+}
+///////////////////////////////////////////////////////////////////////////////
+
 template<typename T>
   static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                     hls::stream<StreamChannel> &stream_out,
@@ -42,7 +197,6 @@ template<typename T>
   int input_height = input_shape->dims_[1];
   int input_width = input_shape->dims_[2];
   volatile int input_depth = input_shape->dims_[3];
-  float * input_data = input_instance_;
 
   TensorShape * filter_shape = &profile->filter_shape_;
   volatile int filter_height = filter_shape->dims_[1];
@@ -53,7 +207,6 @@ template<typename T>
   volatile int output_height = output_shape->dims_[1];
   volatile int output_width = output_shape->dims_[2];
   volatile int output_depth = output_shape->dims_[3];
-  volatile float * output_data = output_instance_;
 
   TensorShape * bias_shape = &profile->bias_shape_;
   float * bias_data = bias_instance_;
@@ -73,11 +226,25 @@ template<typename T>
 
   *debug = 7;
 
+  StreamPeripheral_initialize (stream_in,
+                                input_depth,
+                                input_width,
+                                filter_height,
+                                FlatSize(output_shape));
+
   CONV_OUTPUT_BATCH: for (int batch = 0; batch < batches; ++batch)
   {
     CONV_OUTPUT_ROW: for (int out_y = 0; out_y < output_height; ++out_y)
     {
       const int in_y_origin = (out_y * stride_height) - pad_height;
+
+      StreamPeripheral_pushSlice (stream_in,
+                                  input_depth,
+                                  input_width,
+                                  input_height,
+                                  filter_height,
+                                  in_y_origin);
+
       CONV_OUTPUT_COL: for (int out_x = 0; out_x < output_width; ++out_x)
       {
         const int in_x_origin = (out_x * stride_width) - pad_width;
@@ -103,8 +270,11 @@ template<typename T>
 
               CONV_FILTER_CHANNEL: for (int in_channel = 0; in_channel < input_depth; ++in_channel)
               {
-                float input_value = input_data[Offset (input_shape, batch, in_y,
-                                                       in_x, in_channel)];
+                //float input_value = input_data[Offset (input_shape, batch, in_y,
+                //                                       in_x, in_channel)];
+                float input_value = StreamPeripheral_inputData (*input_shape, batch, in_y,
+                                                      in_x, in_channel);
+
                 float filter_value = filter_data[Offset (filter_shape,
                                                          out_channel, filter_y,
                                                          filter_x, in_channel)];
@@ -117,10 +287,11 @@ template<typename T>
           {
             bias_value = bias_data[out_channel];
           }
-          output_data[Offset (output_shape, batch, out_y, out_x, out_channel)] =
-              ActivationFunctionWithMinMax (total + bias_value,
+          //output_data[Offset (output_shape, batch, out_y, out_x, out_channel)] =
+          StreamPeripheral_outputData(stream_out,
+                                      ActivationFunctionWithMinMax (total + bias_value,
                                             output_activation_min,
-                                            output_activation_max);
+                                            output_activation_max));
         }
       }
     }
@@ -405,6 +576,8 @@ int conv (ConvExecutionMode mode,
     default:
       rc = -1;
   }
+
+  channel_out.last = 0;
 
   return rc;
 }
