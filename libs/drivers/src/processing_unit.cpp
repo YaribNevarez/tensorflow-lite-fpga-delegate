@@ -42,7 +42,7 @@ int ProcessingUnit::execute (Transaction * transaction)
     size_t tx_buffer_size = transaction->txBufferSize;
     void * rx_buffer = transaction->rxBufferPtr;
     size_t rx_buffer_size = transaction->rxBufferSize;
-    int    flags = transaction->flags;
+    int  *  flags = &transaction->flags;
 
     transaction_ = transaction;
 
@@ -61,12 +61,17 @@ int ProcessingUnit::execute (Transaction * transaction)
     while (!hwVtbl->IsReady (hwInstance));
 
     hwVtbl->Set_mode (hwInstance, transaction->mode);
+
+    *flags &= ~HW_IP_DONE;
+
     hwVtbl->Start (hwInstance);
 
     if (tx_buffer != nullptr && 0 < tx_buffer_size)
     {
-      if (flags & TX_CACHE_FUSH)
+      if (*flags & TX_CACHE_FUSH)
         Xil_DCacheFlushRange ((UINTPTR) tx_buffer, tx_buffer_size);
+
+      *flags &= ~DMA_TX_DONE;
 
       status = dmaVtbl->Move (dmaInstance, (void *) tx_buffer, tx_buffer_size,
                               MEMORY_TO_HARDWARE);
@@ -74,12 +79,16 @@ int ProcessingUnit::execute (Transaction * transaction)
 
     if (rx_buffer != nullptr && 0 < rx_buffer_size)
     {
+      *flags &= ~DMA_RX_DONE;
+
       status = dmaVtbl->Move (dmaInstance, (void *) rx_buffer, rx_buffer_size,
                               HARDWARE_TO_MEMORY);
     }
 
-    if (flags & BLOCKING_IN_OUT)
+    if (*flags & BLOCKING_IN_OUT)
+    {
       while (!hwVtbl->IsDone (hwInstance));
+    }
   }
 
   return status;
@@ -146,7 +155,11 @@ void ProcessingUnit::dmaTxInterruptHandler (void * data)
     }
 
     if (irq_status & DMA_IRQ_IOC)
+    {
+      ASSERT(pu->transaction_ != nullptr);
+      pu->transaction_->flags |= DMA_TX_DONE;
       pu->onDone_dmaTx ();
+    }
   }
 }
 
@@ -201,6 +214,8 @@ void ProcessingUnit::dmaRxInterruptHandler (void * data)
                                    transaction->rxBufferSize);
       }
 
+      transaction->flags |= DMA_RX_DONE;
+
       pu->onDone_dmaRx ();
     }
   }
@@ -228,7 +243,11 @@ void ProcessingUnit::hardwareInterruptHandler (void * data)
 
     /*!! Clear profile BEFORE making the accelerator ready !!*/
     if (status & 1)
+    {
+      ASSERT(pu->transaction_ != nullptr);
+      pu->transaction_->flags |= HW_IP_DONE;
       pu->onDone_ip ();
+    }
   }
 }
 

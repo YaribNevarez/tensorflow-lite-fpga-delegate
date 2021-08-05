@@ -137,7 +137,10 @@ public:
   {
     TX_CACHE_FUSH   = 1<<0,
     RX_CACHE_FETCH  = 1<<1,
-    BLOCKING_IN_OUT = 1<<2
+    BLOCKING_IN_OUT = 1<<2,
+    HW_IP_DONE      = 1<<3,
+    DMA_TX_DONE     = 1<<4,
+    DMA_RX_DONE     = 1<<5
   } TransactionFlags;
 
   typedef struct
