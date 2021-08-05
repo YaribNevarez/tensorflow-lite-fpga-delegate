@@ -60,7 +60,7 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
   static Transaction transaction = { 0 };
   size_t txBufferSize = 0;
   size_t rxBufferSize = 0;
-  void * txBufferPtr = nullptr;
+  static void * txBufferPtr = nullptr;
   void * rxBufferPtr = nullptr;
   ConvProfile * conv_profile = nullptr;
   float * filter = nullptr;
@@ -77,7 +77,10 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
   }
 
   txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
-  txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
+
+  if (txBufferPtr == nullptr)
+    txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
+
   memset (txBufferPtr, 0, txBufferSize);
 
   transaction.mode = CONV_LOAD_PROFILE_PACKAGE;
@@ -151,7 +154,7 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
                 im2col_data);
 }
 
-static float StreamPeripheral_inputBuffer[1024*1024] = {0};
+static float StreamPeripheral_inputBuffer[3072] = {0};
 static int StreamPeripheral_yOffset = 0;
 static int StreamPeripheral_lookupTable[32] = {0};
 static int StreamPeripheral_lookupTableRows[32] = {0};
@@ -160,8 +163,9 @@ static int StreamPeripheral_lookupLength = 0;
 static int StreamPeripheral_rowCount = 0;
 
 static int AXIStream_index = 0;
+static float AXIStream_inputBuffer[2] = {0};
+static float AXIStream_outputBuffer[2] = {0};
 static int AXIStreamOut_index = 0;
-static float * AXIStreamOut_buffer = nullptr;
 
 float StreamPeripheral_inputData (const tflite::RuntimeShape& input_shape,
                                   int batch,
@@ -189,21 +193,24 @@ float StreamPeripheral_inputData (const tflite::RuntimeShape& input_shape,
   return StreamPeripheral_inputBuffer[i];
 }
 
-void StreamPeripheral_outputData (float output)
+void StreamPeripheral_outputData (float * output_data, float output)
 {
-  AXIStreamOut_buffer[AXIStreamOut_index++] = output;
+  AXIStream_outputBuffer[AXIStreamOut_index % 2] = output;
+  if (AXIStreamOut_index % 2 == 2 - 1)
+  {
+    output_data[AXIStreamOut_index - 1] = AXIStream_outputBuffer[0];
+    output_data[AXIStreamOut_index - 0] = AXIStream_outputBuffer[1];
+  }
+  AXIStreamOut_index ++;
 }
 
 void StreamPeripheral_initialize (const float * input_data,
                                  int input_depth,
                                  int input_width,
-                                 int filter_height,
-                                 float * output_data)
+                                 int filter_height)
 {
-  int i = 0;
   AXIStream_index = 0;
 
-  AXIStreamOut_buffer = output_data;
   AXIStreamOut_index = 0;
 
   StreamPeripheral_lookupLength = filter_height;
@@ -214,30 +221,30 @@ void StreamPeripheral_initialize (const float * input_data,
 
   for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
   {
-    StreamPeripheral_lookupTable[row] = i;
+    StreamPeripheral_lookupTable[row] = AXIStream_index;
     StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
     for (int col = 0; col < input_width; col++)
     {
       for (int chan = 0; chan < input_depth; chan++)
       {
-        StreamPeripheral_inputBuffer[i] = input_data[AXIStream_index ++];
-        i++;
+        if (AXIStream_index%2 == 0)
+        {
+          AXIStream_inputBuffer[0] = input_data[AXIStream_index + 0];
+          AXIStream_inputBuffer[1] = input_data[AXIStream_index + 1];
+        }
+        StreamPeripheral_inputBuffer[AXIStream_index] = AXIStream_inputBuffer[AXIStream_index%2];
+        AXIStream_index++;
       }
     }
   }
 
-  StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = i;
+  StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = AXIStream_index;
 
   ASSERT (StreamPeripheral_lookupLength == filter_height);
   ASSERT (StreamPeripheral_lookupIndex == StreamPeripheral_lookupLength - 1);
   ASSERT (StreamPeripheral_lookupIndex == StreamPeripheral_rowCount);
   ASSERT (AXIStream_index == StreamPeripheral_rowCount * input_depth * input_width);
 }
-
-//static float StreamPeripheral_inputBuffer[1024] = {0};
-//static int StreamPeripheral_bufferVectorLength = 0;
-//static int StreamPeripheral_lookupTable[32] = {0};
-//static int StreamPeripheral_stateIndex = 0;
 
 void StreamPeripheral_pushSlice (const float * input_data,
                                   int input_depth,
@@ -258,8 +265,14 @@ void StreamPeripheral_pushSlice (const float * input_data,
     {
       for (int chan = 0; chan < input_depth; chan++)
       {
-        StreamPeripheral_inputBuffer[i] = input_data[AXIStream_index++];
-        i++;
+        if (AXIStream_index%2 == 0)
+        {
+          AXIStream_inputBuffer[0] = input_data[AXIStream_index + 0];
+          AXIStream_inputBuffer[1] = input_data[AXIStream_index + 1];
+        }
+
+        StreamPeripheral_inputBuffer[i++] = AXIStream_inputBuffer[AXIStream_index%2];
+        AXIStream_index++;
       }
     }
 
@@ -310,8 +323,7 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
   StreamPeripheral_initialize (input_data,
                               input_depth,
                               input_width,
-                              filter_height,
-                              output_data);
+                              filter_height);
 
   for (int batch = 0; batch < batches; ++batch) {
     for (int out_y = 0; out_y < output_height; ++out_y) {
@@ -359,7 +371,7 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
           if (bias_data) {
             bias_value = bias_data[out_channel];
           }
-          StreamPeripheral_outputData(
+          StreamPeripheral_outputData(output_data,
               tflite::ActivationFunctionWithMinMax(total + bias_value,
                                            output_activation_min,
                                            output_activation_max));
