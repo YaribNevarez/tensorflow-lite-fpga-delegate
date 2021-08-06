@@ -32,16 +32,24 @@ namespace {
 
 static ConvFpgaDelegate * delegate_ = nullptr;
 
+typedef struct
+{
+  int valid;
+  ConvFpgaDelegate::NodeProfile profile;
+} DelegateProfile;
+
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
 
-  delegate_ = new ConvFpgaDelegate();
-  TFLITE_DCHECK(delegate_ != nullptr);
+  if (delegate_ == nullptr)
+  {
+    delegate_ = new ConvFpgaDelegate();
+    TFLITE_DCHECK(delegate_ != nullptr);
+    if (delegate_)
+      TFLITE_DCHECK(0 == delegate_->initialize());
+  }
 
-  if (delegate_)
-    TFLITE_DCHECK(0 == delegate_->initialize());
-
-  return context->AllocatePersistentBuffer(context, sizeof(OpDataConv));
+  return context->AllocatePersistentBuffer(context, sizeof(OpDataConv) + sizeof(DelegateProfile));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -62,24 +70,32 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TFLITE_DCHECK(node->user_data != nullptr);
   const auto& data = *(static_cast<const OpDataConv*>(node->user_data));
 
+  DelegateProfile & delegate_profile = *(static_cast<DelegateProfile*>(node->user_data + sizeof(OpDataConv)));
+
+  if (!delegate_profile.valid)
+  {
+    delegate_profile.profile = delegate_->GenNodeProfile(ConvParamsFloat (params, data),
+        tflite::micro::GetTensorShape (input),
+        tflite::micro::GetTensorData<float> (input),
+        tflite::micro::GetTensorShape (filter),
+        tflite::micro::GetTensorData<float> (filter),
+        tflite::micro::GetTensorShape (bias),
+        tflite::micro::GetTensorData<float> (bias),
+        tflite::micro::GetTensorShape (output),
+        tflite::micro::GetTensorData<float> (output),
+        tflite::micro::GetTensorShape (nullptr), nullptr);
+    delegate_profile.valid = 1;
+  }
+
   TF_LITE_ENSURE_EQ(context, input->type, output->type);
   TF_LITE_ENSURE_MSG(context, input->type == filter->type,
                      "Hybrid models are not supported on TFLite Micro.");
 
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-      if (delegate_)
+      if (delegate_profile.profile.compute.txBufferPtr)
       {
-        delegate_->Conv (ConvParamsFloat (params, data),
-                         tflite::micro::GetTensorShape (input),
-                         tflite::micro::GetTensorData<float> (input),
-                         tflite::micro::GetTensorShape (filter),
-                         tflite::micro::GetTensorData<float> (filter),
-                         tflite::micro::GetTensorShape (bias),
-                         tflite::micro::GetTensorData<float> (bias),
-                         tflite::micro::GetTensorShape (output),
-                         tflite::micro::GetTensorData<float> (output),
-                         tflite::micro::GetTensorShape (nullptr), nullptr);
+        delegate_->execute (&delegate_profile.profile);
       }
       else
       {

@@ -45,6 +45,124 @@ int ConvFpgaDelegate::initialize()
   return ProcessingUnit::initialize (&profile);
 }
 
+ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::ConvParams& params,
+                             const tflite::RuntimeShape& input_shape,
+                             const float* input_data,
+                             const tflite::RuntimeShape& filter_shape,
+                             const float* filter_data,
+                             const tflite::RuntimeShape& bias_shape,
+                             const float* bias_data,
+                             const tflite::RuntimeShape& output_shape,
+                             float* output_data,
+                             const tflite::RuntimeShape& im2col_shape,
+                             float* im2col_data)
+{
+  NodeProfile nodeSettings = { 0 };
+  size_t txBufferSize = 0;
+  void * txBufferPtr = nullptr;
+  ConvProfile * conv_profile = nullptr;
+  float * filter = nullptr;
+  float * bias = nullptr;
+
+  if (73728 < filter_shape.FlatSize ())
+  {
+    return nodeSettings;
+  }
+
+  TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
+
+  if (bias_data)
+  {
+    const int output_depth = MatchingDim (filter_shape, 0, output_shape, 3);
+    TFLITE_DCHECK_EQ(bias_shape.FlatSize (), output_depth);
+  }
+
+  txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
+
+  txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, 1024 * 1024);
+  memset (txBufferPtr, 0, 1024 * 1024);
+  Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, 1024 * 1024);
+
+  nodeSettings.setup.mode = CONV_LOAD_PROFILE_PACKAGE;
+  nodeSettings.setup.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
+  nodeSettings.setup.txBufferPtr = txBufferPtr;
+  nodeSettings.setup.txBufferSize = txBufferSize;
+  nodeSettings.setup.rxBufferPtr = nullptr;
+  nodeSettings.setup.rxBufferSize = 0;
+
+  conv_profile = (ConvProfile *) txBufferPtr;
+  filter = (float *) &conv_profile[1];
+  bias = &filter[filter_shape.FlatSize ()];
+
+  conv_profile->parameters_.stride_.height_ = params.stride_height;
+  conv_profile->parameters_.stride_.width_ = params.stride_width;
+
+  conv_profile->parameters_.dilation_.height_ = params.dilation_height_factor;
+  conv_profile->parameters_.dilation_.width_ = params.dilation_width_factor;
+
+  conv_profile->parameters_.padding_.height_ = params.padding_values.height;
+  conv_profile->parameters_.padding_.width_ = params.padding_values.width;
+
+  conv_profile->parameters_.activation_.max_ = params.float_activation_max;
+  conv_profile->parameters_.activation_.min_ = params.float_activation_min;
+
+  conv_profile->input_shape_.dims_[0] = input_shape.Dims (0);
+  conv_profile->input_shape_.dims_[1] = input_shape.Dims (1);
+  conv_profile->input_shape_.dims_[2] = input_shape.Dims (2);
+  conv_profile->input_shape_.dims_[3] = input_shape.Dims (3);
+
+  conv_profile->filter_shape_.dims_[0] = filter_shape.Dims (0);
+  conv_profile->filter_shape_.dims_[1] = filter_shape.Dims (1);
+  conv_profile->filter_shape_.dims_[2] = filter_shape.Dims (2);
+  conv_profile->filter_shape_.dims_[3] = filter_shape.Dims (3);
+
+  conv_profile->bias_shape_.dims_[0] = bias_shape.Dims (0);
+  conv_profile->bias_shape_.dims_[1] = 1;
+  conv_profile->bias_shape_.dims_[2] = 1;
+  conv_profile->bias_shape_.dims_[3] = 1;
+
+  conv_profile->output_shape_.dims_[0] = output_shape.Dims (0);
+  conv_profile->output_shape_.dims_[1] = output_shape.Dims (1);
+  conv_profile->output_shape_.dims_[2] = output_shape.Dims (2);
+  conv_profile->output_shape_.dims_[3] = output_shape.Dims (3);
+
+  memcpy (filter,
+          filter_data,
+          filter_shape.FlatSize () * sizeof(float));
+
+  memcpy (bias,
+          bias_data,
+          bias_shape.FlatSize () * sizeof(float));
+
+  nodeSettings.compute.mode = CONV_EXECUTION;
+  nodeSettings.compute.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
+  nodeSettings.compute.txBufferPtr = (void *) input_data;
+  nodeSettings.compute.txBufferSize = input_shape.FlatSize() * sizeof(float);
+  nodeSettings.compute.rxBufferPtr = (void *) output_data;
+  nodeSettings.compute.rxBufferSize = output_shape.FlatSize() * sizeof(float);
+
+  return nodeSettings;
+}
+
+int ConvFpgaDelegate::execute(NodeProfile * profile)
+{
+  int status = XST_FAILURE;
+  ASSERT(profile != nullptr);
+
+  if (profile != nullptr)
+  {
+    status = ProcessingUnit::execute(&profile->setup);
+    ASSERT(status == XST_SUCCESS);
+
+    status = ProcessingUnit::execute(&profile->compute);
+    ASSERT(status == XST_SUCCESS);
+  }
+
+  return status;
+}
+
 void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
                              const tflite::RuntimeShape& input_shape,
                              const float* input_data,
@@ -66,6 +184,15 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
   float * filter = nullptr;
   float * bias = nullptr;
 
+  if (73728 < filter_shape.FlatSize ())
+  {
+    ConvInternal (params, input_shape, input_data, filter_shape, filter_data,
+                  bias_shape, bias_data, output_shape, output_data,
+                  im2col_shape, im2col_data);
+    printf("Bypass, filter bigger than 73728\n");
+    return;
+  }
+
   TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
   TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
   TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
@@ -79,7 +206,11 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
   txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
 
   if (txBufferPtr == nullptr)
-    txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
+  {
+    txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, 1024 * 1024);
+    memset (txBufferPtr, 0, 1024 * 1024);
+    Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, 1024 * 1024);
+  }
 
   memset (txBufferPtr, 0, txBufferSize);
 
@@ -134,24 +265,53 @@ void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
           bias_data,
           bias_shape.FlatSize () * sizeof(float));
 
-  //execute (&transaction);
+  ProcessingUnit::execute (&transaction);
 
+  size_t input_data_buffer_size = input_shape.FlatSize() * sizeof(float);
+  static float * input_data_buffer = nullptr;
 
-  rxBufferSize = sizeof(ConvProfile);
-  rxBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, rxBufferSize);
-  memset (rxBufferPtr, 0, rxBufferSize);
+  if (input_data_buffer == nullptr)
+  {
+    input_data_buffer = (float*) MemoryBlock_alloc (&profile_->ddrMem,
+                                                    1024 * 1024);
+    memset (input_data_buffer, 0, 1024 * 1024);
+    Xil_DCacheFlushRange ((UINTPTR) input_data_buffer, 1024 * 1024);
+  }
 
-  transaction.mode = CONV_FETCH_PROFILE;
+  size_t output_data_buffer_size = output_shape.FlatSize() * sizeof(float);
+  static float * output_data_buffer = nullptr;
+
+  if (output_data_buffer == nullptr)
+  {
+    output_data_buffer = (float*) MemoryBlock_alloc (&profile_->ddrMem,
+                                                     1024 * 1024);
+
+    memset (output_data_buffer, 0, 1024 * 1024);
+    Xil_DCacheFlushRange ((UINTPTR) output_data_buffer, 1024 * 1024);
+  }
+
+  memcpy (input_data_buffer, input_data, input_data_buffer_size);
+
+  transaction.mode = CONV_EXECUTION;
   transaction.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
-  transaction.txBufferPtr = nullptr;
-  transaction.txBufferSize = 0;
-  transaction.rxBufferPtr = rxBufferPtr;
-  transaction.rxBufferSize = rxBufferSize;
-  //execute (&transaction);
+  transaction.txBufferPtr = (void *) input_data;
+  transaction.txBufferSize = input_data_buffer_size;
+  transaction.rxBufferPtr = (void *) output_data;
+  transaction.rxBufferSize = output_data_buffer_size;
+  ProcessingUnit::execute (&transaction);
 
   ConvInternal (params, input_shape, input_data, filter_shape, filter_data,
-                bias_shape, bias_data, output_shape, output_data, im2col_shape,
+                bias_shape, bias_data, output_shape, output_data_buffer, im2col_shape,
                 im2col_data);
+
+  if(0 == memcmp(output_data_buffer, output_data, output_data_buffer_size))
+  {
+    printf("Processing Unit [Pass]!\n");
+  }
+  else
+  {
+    printf("Processing Unit [Fail]!\n");
+  }
 }
 
 static float StreamPeripheral_inputBuffer[3072] = {0};
