@@ -270,6 +270,11 @@ void MicroGraph::AllocateEventLogger (Event * parent, int subgraph_idx)
 
       op_name = OpNameFromRegistration (registration);
       event_array_[i] = Event_new (parent, EVENT_LAYER, (void *) op_name);
+
+      // [Begin] Temporary solution
+      subgraph_allocations->node_and_registrations[i].node.delegate =
+            (TfLiteDelegate*) event_array_[i];
+      // [End] Temporary solution
     }
   }
 }

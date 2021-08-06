@@ -72,7 +72,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   DelegateProfile & delegate_profile = *(static_cast<DelegateProfile*>(node->user_data + sizeof(OpDataConv)));
 
-  if (!delegate_profile.valid)
+  if ((delegate_ != nullptr) && !delegate_profile.valid)
   {
     delegate_profile.profile = delegate_->GenNodeProfile(ConvParamsFloat (params, data),
         tflite::micro::GetTensorShape (input),
@@ -83,7 +83,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
         tflite::micro::GetTensorData<float> (bias),
         tflite::micro::GetTensorShape (output),
         tflite::micro::GetTensorData<float> (output),
-        tflite::micro::GetTensorShape (nullptr), nullptr);
+        tflite::micro::GetTensorShape (nullptr), nullptr,
+        (Event *)node->delegate);
     delegate_profile.valid = 1;
   }
 
@@ -93,7 +94,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-      if (delegate_profile.profile.compute.txBufferPtr)
+      if ((delegate_ != nullptr) && delegate_profile.profile.compute.txBufferPtr)
       {
         delegate_->execute (&delegate_profile.profile);
       }

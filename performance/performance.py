@@ -5,10 +5,10 @@ fig, (ax1, ax2) = plt.subplots(2, 1)
 
 fig.suptitle('Performance')
 
-begin   = np.array([0.000, 0.001, 0.001, 0.003, 1.569, 1.572, 1.57])
-latency = np.array([6.820, 6.818, 6.816, 1.566, 5.174, 0.937, 5.251])
-event   = ["Interpreter", "CONV_2D_SW", "CONV_2D_HW", "FLUSH", "TX_HW", "FETCH", "RX_HW"]
-colors = ["#1864ab", "#4a98c9", "#94c4df", "#4a98c9", "#94c4df", "#4a98c9", "#94c4df"]
+begin   = np.array([0.000, 0.002, 336.304, 3509.327, 3521.313, 5052.072, 8099.117, 8105.111, 9499.974, 12281.015, 12284.003, 12284.255, 12299.582, 12299.666])
+latency = np.array([12299.676, 336.298, 3173.019, 11.984, 1530.756, 3047.042, 5.991, 1394.860, 2781.037, 2.986, 0.250, 15.324, 0.081, 0.008])
+event   = ["Interpreter", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX"]
+colors = ["#1864ab", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9"]
 
 
 ax1.barh(range(len(begin)),  latency, left=begin, color=colors)
@@ -23,11 +23,11 @@ ax1.tick_params(axis='both', which='minor', labelsize=1)
 plt.xlabel("Schedule (ms)")
 plt.ylabel("Task")
 
-data = [[ 0.001, 0.003, 1.572],
-        [ 6.818, 1.566, 0.937],
-        [ 6.816, 5.174, 5.251]]
+data = [[ 0.002, 336.304, 3509.327, 3521.313, 5052.072, 8099.117, 8105.111, 9499.974, 12281.015, 12284.003, 12284.255, 12299.582, 12299.666],
+        [ 336.298, 3173.019, 11.984, 1530.756, 3047.042, 5.991, 1394.860, 2781.037, 2.986, 0.250, 15.324, 0.081, 0.008],
+        [ 117.584, 1020.239, 0.000, 488.897, 965.672, 0.000, 442.131, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000]]
 
-columns = ("CONV_2D_SW", "FLUSH", "FETCH")
+columns = ("CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX")
 rows = ["Hardware", "Software", "II OFFSET"]
 
 # Get some pastel shades for the colors

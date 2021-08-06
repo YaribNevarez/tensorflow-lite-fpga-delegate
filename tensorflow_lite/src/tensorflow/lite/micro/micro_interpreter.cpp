@@ -269,9 +269,9 @@ TfLiteStatus MicroInterpreter::AllocateTensors() {
 
   TF_LITE_ENSURE_STATUS(ResetVariableTensors());
 
-  event_ = Event_new(nullptr, EVENT_NETWORK, (void *)"Interpreter");
+  event_ = Event_new (nullptr, EVENT_NETWORK, (void *) "Interpreter");
 
-  graph_.AllocateEventLogger(event_, 0);
+  graph_.AllocateEventLogger (event_, 0);
 
   tensors_allocated_ = true;
   return kTfLiteOk;

@@ -55,7 +55,8 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
                              const tflite::RuntimeShape& output_shape,
                              float* output_data,
                              const tflite::RuntimeShape& im2col_shape,
-                             float* im2col_data)
+                             float* im2col_data,
+                             Event * parent)
 {
   NodeProfile nodeSettings = { 0 };
   size_t txBufferSize = 0;
@@ -143,6 +144,8 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
   nodeSettings.compute.rxBufferPtr = (void *) output_data;
   nodeSettings.compute.rxBufferSize = output_shape.FlatSize() * sizeof(float);
 
+  nodeSettings.event = Event_new (parent, EVENT_HARDWARE, (void *) "CONV_HW");
+
   return nodeSettings;
 }
 
@@ -156,11 +159,30 @@ int ConvFpgaDelegate::execute(NodeProfile * profile)
     status = ProcessingUnit::execute(&profile->setup);
     ASSERT(status == XST_SUCCESS);
 
+    Event_start (profile->event);
+
     status = ProcessingUnit::execute(&profile->compute);
     ASSERT(status == XST_SUCCESS);
+
+    Event_stop (profile->event);
   }
 
   return status;
+}
+
+void ConvFpgaDelegate::onDone_ip (void)
+{
+
+}
+
+void ConvFpgaDelegate::onDone_dmaRx (void)
+{
+
+}
+
+void ConvFpgaDelegate::onDone_dmaTx (void)
+{
+
 }
 
 void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
