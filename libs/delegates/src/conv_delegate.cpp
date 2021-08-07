@@ -14,6 +14,22 @@
 #include "memory_manager.h"
 #include "miscellaneous.h"
 
+void Buffer_print (void * data, size_t size, char* name)
+{
+  printf ("unsigned int %s [] = {", name);
+  for (int i = 0, c = 0; i < size/sizeof(unsigned int); i ++)
+  {
+    printf ("0x%X%s", ((unsigned int*) data)[i], (i + 1 < size/sizeof(unsigned int))?", ":"");
+    if (++c == 8)
+    {
+      c = 0;
+      printf ("\n");
+    }
+  }
+  printf ("};\nunsigned int %s_len = %d;\n", name,
+          size / sizeof(unsigned int));
+}
+
 ConvFpgaDelegate::ConvFpgaDelegate()
 {
 
