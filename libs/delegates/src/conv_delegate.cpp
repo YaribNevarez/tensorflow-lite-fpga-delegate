@@ -13,6 +13,7 @@
 #include "conv_hls.h"
 #include "memory_manager.h"
 #include "miscellaneous.h"
+#include "custom_float.h"
 
 void Buffer_print (void * data, size_t size, char* name)
 {
@@ -29,6 +30,100 @@ void Buffer_print (void * data, size_t size, char* name)
   printf ("};\nunsigned int %s_len = %d;\n", name,
           size / sizeof(unsigned int));
 }
+
+///////////////////////////////////////////////////////////////////////
+void Tensor_histogram (float * tensor, size_t tensor_len, const char * name)
+{
+  typedef struct
+  {
+    int total_samples;
+    int bin_array_len_positive;
+    int bin_array_len_negative;
+    int bin_array_positive[32];
+    int bin_array_negative[32];
+  } Histogram;
+
+  typedef union
+  {
+    float     f32;
+    uint32_t  i32;
+  } Data32;
+
+  Data32 * data = (Data32 *) tensor;
+  Histogram histogram = { 0 };
+  int8_t exponent;
+
+  for (size_t i = 0; i < tensor_len; i ++)
+  {
+    exponent = 0xFF & (data[i].i32 >> 23);
+
+    ASSERT (exponent < 0x80);
+    if (!(exponent < 0x80))
+      return ;
+
+    exponent -= 127;
+
+    ASSERT (exponent < 0);
+    if (exponent < 0)
+    {
+      if (data[i].i32 & 0x80000000)
+      { // Negative
+        histogram.bin_array_negative[-exponent] ++;
+
+        if (histogram.bin_array_len_negative < -exponent)
+        {
+          histogram.bin_array_len_negative = -exponent;
+        }
+      }
+      else
+      { // Positive
+        histogram.bin_array_positive[-exponent] ++;
+
+        if (histogram.bin_array_len_positive < -exponent)
+        {
+          histogram.bin_array_len_positive = -exponent;
+        }
+      }
+    }
+  }
+
+  histogram.total_samples = tensor_len;
+  ///////////////////////////////////////////////////////////////////
+  if (histogram.bin_array_len_negative < 32)
+  {
+    printf ("Tensor Log-2 histogram\n");
+
+    if (histogram.bin_array_positive[0] || histogram.bin_array_negative[0])
+    {
+      printf ("Error, out of range (denormalized)\n");
+    }
+
+    //////////////////// Negative
+    printf ("\n%s_positive_histogram = { ", name);
+    for (int i = histogram.bin_array_len_negative; 0 < i; i--)
+    {
+      printf (
+          "'$-2^{-%d}$':%.2f%s", i, ((float)histogram.bin_array_negative[i])/((float)histogram.total_samples),
+          (1 < i) ? ", " : "");
+    }
+    printf (" } ");
+
+    //////////////////// Positive
+    printf ("\n%s_negative_histogram = { ", name);
+    for (int i = 1; i < histogram.bin_array_len_positive; i++)
+    {
+      printf (
+          "'$+2^{-%d}$':%.2f%s", i, ((float)histogram.bin_array_positive[i])/((float)histogram.total_samples),
+          (i < histogram.bin_array_len_positive - 1) ? ", " : "");
+    }
+    printf (" } ");
+
+
+
+    printf ("\n");
+  }
+}
+///////////////////////////////////////////////////////////////////////
 
 ConvFpgaDelegate::ConvFpgaDelegate()
 {
@@ -162,6 +257,8 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
 
   nodeSettings.event = Event_new (parent, EVENT_HARDWARE, (void *) "CONV_HW");
 
+  Tensor_histogram ((float *) filter_data, filter_shape.FlatSize (), "Filter");
+
   return nodeSettings;
 }
 
@@ -169,6 +266,9 @@ int ConvFpgaDelegate::execute(NodeProfile * profile)
 {
   int status = XST_FAILURE;
   ASSERT(profile != nullptr);
+
+  ConvInternal (profile);
+  profile = nullptr; /// break
 
   if (profile != nullptr)
   {
@@ -199,157 +299,6 @@ void ConvFpgaDelegate::onDone_dmaRx (void)
 void ConvFpgaDelegate::onDone_dmaTx (void)
 {
 
-}
-
-void ConvFpgaDelegate::Conv (const tflite::ConvParams& params,
-                             const tflite::RuntimeShape& input_shape,
-                             const float* input_data,
-                             const tflite::RuntimeShape& filter_shape,
-                             const float* filter_data,
-                             const tflite::RuntimeShape& bias_shape,
-                             const float* bias_data,
-                             const tflite::RuntimeShape& output_shape,
-                             float* output_data,
-                             const tflite::RuntimeShape& im2col_shape,
-                             float* im2col_data)
-{
-  static Transaction transaction = { 0 };
-  size_t txBufferSize = 0;
-  size_t rxBufferSize = 0;
-  static void * txBufferPtr = nullptr;
-  void * rxBufferPtr = nullptr;
-  ConvProfile * conv_profile = nullptr;
-  float * filter = nullptr;
-  float * bias = nullptr;
-
-  if (73728 < filter_shape.FlatSize ())
-  {
-    ConvInternal (params, input_shape, input_data, filter_shape, filter_data,
-                  bias_shape, bias_data, output_shape, output_data,
-                  im2col_shape, im2col_data);
-    printf("Bypass, filter bigger than 73728\n");
-    return;
-  }
-
-  TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
-  TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
-  TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
-
-  if (bias_data)
-  {
-    const int output_depth = MatchingDim (filter_shape, 0, output_shape, 3);
-    TFLITE_DCHECK_EQ(bias_shape.FlatSize (), output_depth);
-  }
-
-  txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
-
-  if (txBufferPtr == nullptr)
-  {
-    txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, 1024 * 1024);
-    memset (txBufferPtr, 0, 1024 * 1024);
-    Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, 1024 * 1024);
-  }
-
-  memset (txBufferPtr, 0, txBufferSize);
-
-  transaction.mode = CONV_LOAD_PROFILE_PACKAGE;
-  transaction.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
-  transaction.txBufferPtr = txBufferPtr;
-  transaction.txBufferSize = txBufferSize;
-  transaction.rxBufferPtr = nullptr;
-  transaction.rxBufferSize = 0;
-
-  conv_profile = (ConvProfile *) txBufferPtr;
-  filter = (float *) &conv_profile[1];
-  bias = &filter[filter_shape.FlatSize ()];
-
-  conv_profile->parameters_.stride_.height_ = params.stride_height;
-  conv_profile->parameters_.stride_.width_ = params.stride_width;
-
-  conv_profile->parameters_.dilation_.height_ = params.dilation_height_factor;
-  conv_profile->parameters_.dilation_.width_ = params.dilation_width_factor;
-
-  conv_profile->parameters_.padding_.height_ = params.padding_values.height;
-  conv_profile->parameters_.padding_.width_ = params.padding_values.width;
-
-  conv_profile->parameters_.activation_.max_ = params.float_activation_max;
-  conv_profile->parameters_.activation_.min_ = params.float_activation_min;
-
-  conv_profile->input_shape_.dims_[0] = input_shape.Dims (0);
-  conv_profile->input_shape_.dims_[1] = input_shape.Dims (1);
-  conv_profile->input_shape_.dims_[2] = input_shape.Dims (2);
-  conv_profile->input_shape_.dims_[3] = input_shape.Dims (3);
-
-  conv_profile->filter_shape_.dims_[0] = filter_shape.Dims (0);
-  conv_profile->filter_shape_.dims_[1] = filter_shape.Dims (1);
-  conv_profile->filter_shape_.dims_[2] = filter_shape.Dims (2);
-  conv_profile->filter_shape_.dims_[3] = filter_shape.Dims (3);
-
-  conv_profile->bias_shape_.dims_[0] = bias_shape.Dims (0);
-  conv_profile->bias_shape_.dims_[1] = 1;
-  conv_profile->bias_shape_.dims_[2] = 1;
-  conv_profile->bias_shape_.dims_[3] = 1;
-
-  conv_profile->output_shape_.dims_[0] = output_shape.Dims (0);
-  conv_profile->output_shape_.dims_[1] = output_shape.Dims (1);
-  conv_profile->output_shape_.dims_[2] = output_shape.Dims (2);
-  conv_profile->output_shape_.dims_[3] = output_shape.Dims (3);
-
-  memcpy (filter,
-          filter_data,
-          filter_shape.FlatSize () * sizeof(float));
-
-  memcpy (bias,
-          bias_data,
-          bias_shape.FlatSize () * sizeof(float));
-
-  ProcessingUnit::execute (&transaction);
-
-  size_t input_data_buffer_size = input_shape.FlatSize() * sizeof(float);
-  static float * input_data_buffer = nullptr;
-
-  if (input_data_buffer == nullptr)
-  {
-    input_data_buffer = (float*) MemoryBlock_alloc (&profile_->ddrMem,
-                                                    1024 * 1024);
-    memset (input_data_buffer, 0, 1024 * 1024);
-    Xil_DCacheFlushRange ((UINTPTR) input_data_buffer, 1024 * 1024);
-  }
-
-  size_t output_data_buffer_size = output_shape.FlatSize() * sizeof(float);
-  static float * output_data_buffer = nullptr;
-
-  if (output_data_buffer == nullptr)
-  {
-    output_data_buffer = (float*) MemoryBlock_alloc (&profile_->ddrMem,
-                                                     1024 * 1024);
-
-    memset (output_data_buffer, 0, 1024 * 1024);
-    Xil_DCacheFlushRange ((UINTPTR) output_data_buffer, 1024 * 1024);
-  }
-
-  memcpy (input_data_buffer, input_data, input_data_buffer_size);
-
-  transaction.mode = CONV_EXECUTION;
-  transaction.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
-  transaction.txBufferPtr = (void *) input_data;
-  transaction.txBufferSize = input_data_buffer_size;
-  transaction.rxBufferPtr = (void *) output_data;
-  transaction.rxBufferSize = output_data_buffer_size;
-  ProcessingUnit::execute (&transaction);
-
-  ConvInternal (params, input_shape, input_data, filter_shape, filter_data,
-                bias_shape, bias_data, output_shape, output_data_buffer, im2col_shape,
-                im2col_data);
-
-  if(0 == memcmp(output_data_buffer, output_data, output_data_buffer_size))
-  {
-    printf("Processing Unit [Pass]!\n");
-  }
-  else
-  {
-    printf("Processing Unit [Fail]!\n");
-  }
 }
 
 static float StreamPeripheral_inputBuffer[3072] = {0};
@@ -485,26 +434,101 @@ void StreamPeripheral_pushSlice (const float * input_data,
   }
 }
 
-void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tflite::RuntimeShape& input_shape,
-                 const float* input_data, const tflite::RuntimeShape& filter_shape,
-                 const float* filter_data, const tflite::RuntimeShape& bias_shape,
-                 const float* bias_data, const tflite::RuntimeShape& output_shape,
-                 float* output_data, const tflite::RuntimeShape& im2col_shape,
-                 float* im2col_data) {
-  const int stride_width = params.stride_width;
-  const int stride_height = params.stride_height;
-  const int dilation_width_factor = params.dilation_width_factor;
-  const int dilation_height_factor = params.dilation_height_factor;
-  const int pad_width = params.padding_values.width;
-  const int pad_height = params.padding_values.height;
-  const float output_activation_min = params.float_activation_min;
-  const float output_activation_max = params.float_activation_max;
+inline void DotProduct_logarithmic (int64_t & Total_magnitude,
+                                    float & input_value,
+                                    float & filter_value)
+{
+  bool      f_s;
+  int8_t    f_e;
+  uint32_t  f_m;
+
+  bool      i_s;
+  int8_t    i_e;
+  uint32_t  i_m;
+
+  bool      p_s;
+  int8_t    p_e;
+  uint32_t  p_m;
+
+  int64_t  p_magnitude;
+
+  if ((*((uint32_t*) &input_value)) == 0 || (*((uint32_t*) &filter_value)) == 0)
+    return;
+
+  i_s = ((*((uint32_t*) &input_value)) & 0x80000000);
+  i_e = DATA32_GET_EXPONENT(*((uint32_t* ) &input_value));
+  i_m = DATA32_GET_MANTISSA(*((uint32_t* ) &input_value));
+
+  f_s = ((*((uint32_t*) &filter_value)) & 0x80000000);
+  f_e = DATA32_GET_EXPONENT(*((uint32_t* ) &filter_value));
+  f_m = DATA32_GET_MANTISSA(*((uint32_t* ) &filter_value));
+
+  if (f_m & 0x780000)
+  {
+    f_e++;
+  }
+
+  if (f_e < - 0x7)
+    return;
+
+  p_s = f_s != i_s;
+  p_e = f_e + i_e;
+  p_m = i_m;
+
+  p_magnitude = (0 < p_e) ? (p_m << p_e) : (p_m >> -p_e);
+
+  if (p_s)
+    p_magnitude = ~p_magnitude + 1;
+
+  //*((uint32_t*) &p) = BUILD_FLOAT(p_s, p_e, p_m);
+
+  Total_magnitude += p_magnitude;
+}
+
+void ConvFpgaDelegate::ConvInternal (NodeProfile * profile)
+{
+  Transaction * setup = &profile->setup;
+  Transaction * compute = &profile->compute;
+  ConvProfile * conv_profile = nullptr;
+
+
+  conv_profile = (ConvProfile *) setup->txBufferPtr;
+
+  const tflite::RuntimeShape input_shape (
+      sizeof(conv_profile->input_shape_.dims_) / sizeof(int),
+      (const int32_t*) conv_profile->input_shape_.dims_);
+
+  const tflite::RuntimeShape filter_shape (
+      sizeof(conv_profile->filter_shape_.dims_) / sizeof(int),
+      (const int32_t*) conv_profile->filter_shape_.dims_);
+
+  const tflite::RuntimeShape bias_shape (
+      sizeof(conv_profile->bias_shape_.dims_) / sizeof(int),
+      (const int32_t*) conv_profile->bias_shape_.dims_);
+
+  const tflite::RuntimeShape output_shape (
+      sizeof(conv_profile->output_shape_.dims_) / sizeof(int),
+      (const int32_t*) conv_profile->output_shape_.dims_);
+
+  float * filter_data = (float *) &conv_profile[1];
+  float * bias_data = &filter_data[filter_shape.FlatSize ()];
+
+  float * input_data = (float *) compute->txBufferPtr;
+  float * output_data = (float *) compute->rxBufferPtr;
+
+  const int stride_width = conv_profile->parameters_.stride_.width_;
+  const int stride_height = conv_profile->parameters_.stride_.height_;
+  const int dilation_width_factor = conv_profile->parameters_.dilation_.width_;
+  const int dilation_height_factor = conv_profile->parameters_.dilation_.height_;
+  const int pad_width = conv_profile->parameters_.padding_.width_;
+  const int pad_height = conv_profile->parameters_.padding_.height_;
+  const float output_activation_min = conv_profile->parameters_.activation_.min_;
+  const float output_activation_max = conv_profile->parameters_.activation_.max_;
+
   TFLITE_DCHECK_EQ(input_shape.DimensionsCount(), 4);
   TFLITE_DCHECK_EQ(filter_shape.DimensionsCount(), 4);
   TFLITE_DCHECK_EQ(output_shape.DimensionsCount(), 4);
 
-  (void)im2col_data;   // only used in optimized code.
-  (void)im2col_shape;  // only used in optimized code.
   const int batches = MatchingDim(input_shape, 0, output_shape, 0);
   const int input_depth = MatchingDim(input_shape, 3, filter_shape, 3);
   const int output_depth = MatchingDim(filter_shape, 0, output_shape, 3);
@@ -517,6 +541,11 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
   const int filter_width = filter_shape.Dims(2);
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
+
+  bool      Total_sign = false;
+  int8_t    Total_exponent = 0;
+  int64_t   Total_magnitude = 0;
+
 
   StreamPeripheral_initialize (input_data,
                               input_depth,
@@ -538,6 +567,7 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
         const int in_x_origin = (out_x * stride_width) - pad_width;
         for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
           float total = 0.f;
+          Total_magnitude = 0;
           for (int filter_y = 0; filter_y < filter_height; ++filter_y) {
             const int in_y = in_y_origin + dilation_height_factor * filter_y;
             for (int filter_x = 0; filter_x < filter_width; ++filter_x) {
@@ -559,12 +589,34 @@ void ConvFpgaDelegate::ConvInternal(const tflite::ConvParams& params, const tfli
                 ASSERT (input_value == input_data[Offset (input_shape, batch, in_y, in_x,
                                           in_channel)]);
 
-                float filter_value = filter_data[Offset(
-                    filter_shape, out_channel, filter_y, filter_x, in_channel)];
-                total += (input_value * filter_value);
+                float filter_value = filter_data[Offset (filter_shape,
+                                                         out_channel, filter_y,
+                                                         filter_x, in_channel)];
+                //total += (input_value * filter_value);
+                DotProduct_logarithmic (Total_magnitude, input_value, filter_value);
               }
             }
           }
+
+          if (Total_magnitude != 0)
+          {
+            Total_sign = Total_magnitude < 0;
+            if (Total_sign)
+            {
+              Total_magnitude = ~Total_magnitude + 1;
+            }
+
+            for (Total_exponent = 0; !(0x80000000000000 & Total_magnitude); Total_exponent++)
+            { // Normalize
+              Total_magnitude <<= 1;
+            }
+
+            Total_exponent -= 32;
+            Total_magnitude >>= 32;
+
+            *(uint32_t*) (&total) = BUILD_FLOAT(Total_sign, -Total_exponent, Total_magnitude);
+          }
+
           float bias_value = 0.0f;
           if (bias_data) {
             bias_value = bias_data[out_channel];

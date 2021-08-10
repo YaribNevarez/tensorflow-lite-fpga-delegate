@@ -1,15 +1,20 @@
 import tensorflow as tf
 
-from tensorflow.keras import datasets, layers, models
+from tensorflow.keras import datasets, layers, models, utils
+import matplotlib.pyplot as plt
 import os
+
+# Recreate the exact same model, including its weights and the optimizer
+model = tf.keras.models.load_model('cifar_model.h5')
+
+model.summary()
+
+tf.keras.utils.plot_model(model, "multi_input_and_output_model.png", show_shapes=True, show_layer_names=True, expand_nested=True)
 
 (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
 # Normalize pixel values to be between 0 and 1
 train_images, test_images = train_images / 255 , test_images / 255
-
-# Recreate the exact same model, including its weights and the optimizer
-model = tf.keras.models.load_model('cifar_model.h5')
 
 train_images = tf.cast(train_images, tf.float32)
 cifar_ds = tf.data.Dataset.from_tensor_slices((train_images)).batch(1)
