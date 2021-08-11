@@ -94,7 +94,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-      if ((delegate_ != nullptr) && delegate_profile.profile.compute.txBufferPtr)
+      if (delegate_ != nullptr)
       {
         delegate_->execute (&delegate_profile.profile);
       }

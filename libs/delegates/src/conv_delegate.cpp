@@ -176,11 +176,6 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
   float * filter = nullptr;
   float * bias = nullptr;
 
-  if (73728 < filter_shape.FlatSize ())
-  {
-    return nodeSettings;
-  }
-
   TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
   TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
   TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
@@ -266,9 +261,6 @@ int ConvFpgaDelegate::execute(NodeProfile * profile)
 {
   int status = XST_FAILURE;
   ASSERT(profile != nullptr);
-
-  ConvInternal (profile);
-  profile = nullptr; /// break
 
   if (profile != nullptr)
   {
@@ -463,7 +455,7 @@ inline void DotProduct_logarithmic (int64_t & Total_magnitude,
   f_e = DATA32_GET_EXPONENT(*((uint32_t* ) &filter_value));
   f_m = DATA32_GET_MANTISSA(*((uint32_t* ) &filter_value));
 
-  if (f_m & 0x780000)
+  if (0x400000 < (0x7FFFFF & f_m))
   {
     f_e++;
   }

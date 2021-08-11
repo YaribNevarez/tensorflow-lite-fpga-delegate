@@ -3,6 +3,7 @@
 
 #include "convolution.h"
 #include "data_test.h"
+#include "cmath"
 
 using namespace std;
 
@@ -45,11 +46,16 @@ namespace conv_hw
     void execution (void)
     {
       int debug;
+      int num_samples;
       int num_words_channel = (DMA_CHANNEL_WIDTH / 8) / sizeof(unsigned int);
       ap_uint<DMA_CHANNEL_WIDTH> data;
       Data expected;
       Data output;
-      float epsilon = 0.000001;
+      float threshold_error = 0.50;
+      float mse_error = 0;
+      float mean_error = 0;
+      float error = 0;
+      float max_error = 0;
 
       // Send setup transaction
       printf("2.- CONV_EXECUTION\n");
@@ -66,7 +72,9 @@ namespace conv_hw
         printf("Input tensor consumption [PASS]\n");
       }
 
-      for (unsigned int i = 0; i < output_tensor_len; i += num_words_channel)
+      num_samples = output_tensor_len;
+
+      for (unsigned int i = 0; i < num_samples; i += num_words_channel)
       {
         data = stream_output_tensor.read ().data;
         for (int word = 0; word < num_words_channel; word++)
@@ -74,15 +82,30 @@ namespace conv_hw
           output.u32 = data >> (8 * sizeof(unsigned int) * word);
           expected.u32 = output_tensor[i + word];
 
-          if ((output.f32 < expected.f32 - epsilon)
-              || (expected.f32 + epsilon < output.f32))
-          {
+          if (output.f32 < expected.f32)
+            error = expected.f32 - output.f32;
+          else
+            error = output.f32 - expected.f32;
+
+          if (max_error < error)
+            max_error = error;
+
+          mse_error += pow(error, 2);
+          mean_error += error;
+
+          if (threshold_error <= error)
             printf (
                 "Output tensor data mismatch [FAIL]: Index %d; Expected %f, Output %f\n",
                 i + word, expected.f32, output.f32);
-          }
         }
       }
+
+      mse_error /= num_samples;
+      mean_error /= num_samples;
+
+      printf ("Max error: %f\n", max_error);
+      printf ("Mean error: %f\n", mean_error);
+      printf ("Mean squared error (MSE): %f\n", mse_error);
 
       if (stream_input_tensor.empty ())
       {

@@ -1,11 +1,24 @@
 #include "convolution.h"
+#include "../libs/utilities/inc/custom_float.h"
 #include <stdint.h>
 #include <algorithm>
 
-#define CONV_PROFILE_NUM_WORDS ((sizeof(ConvProfile)/(DMA_CHANNEL_WIDTH/8)) + (0<(sizeof(ConvProfile)%(DMA_CHANNEL_WIDTH/8))))
+#define HYBRID_LOGARITHMIC      true
+#define LOG_FORMAT_BIT_WIDTH    8
+#define LOG_MANTISSA_BIT_WIDTH  3
 
-#define OUTPUT_BUFFER_SIZE 8
+#if HYBRID_LOGARITHMIC
+typedef uint8_t         CustomFormat;
+typedef int64_t         MagnitudeFormat;
+typedef int8_t          ExponentFormat;
+typedef bool            SignFormat;
+#else
+typedef float           CustomFormat;
+#endif
 
+
+#define DMA_CHANNEL_BYTE_WIDTH    (DMA_CHANNEL_WIDTH/8)
+#define DMA_CHANNEL_FLOAT_WIDTH   (DMA_CHANNEL_BYTE_WIDTH/sizeof(float))
 
 
 static StreamChannel channel_in;
@@ -23,13 +36,68 @@ inline T ActivationFunctionWithMinMax(T x, T output_activation_min,
 
 #define Offset(shape, i0, i1, i2, i3) ((((i0) * (shape)->dims_[1] + i1) * (shape)->dims_[2] + (i2)) * (shape)->dims_[3] + (i3))
 
+#if HYBRID_LOGARITHMIC
+inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
+                                    float & input_value,
+                                    CustomFormat & filter_value)
+{
+  Data      input_data;
 
-template<typename T>
-  static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
+  SignFormat        f_s;
+  ExponentFormat    f_e;
+  MagnitudeFormat   f_m;
+
+  SignFormat        i_s;
+  ExponentFormat    i_e;
+  MagnitudeFormat   i_m;
+
+  SignFormat        p_s;
+  ExponentFormat    p_e;
+  MagnitudeFormat   p_m;
+
+  MagnitudeFormat   p_magnitude;
+
+  input_data.f32 = input_value;
+
+  if (input_data.u32 == 0 || filter_value == 0)
+    return;
+
+  i_s = (input_data.u32 & 0x80000000);
+  i_e = DATA32_GET_EXPONENT(input_data.u32);
+  i_m = DATA32_GET_MANTISSA(input_data.u32);
+
+  f_s = filter_value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
+  f_e = (filter_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
+      >> LOG_MANTISSA_BIT_WIDTH;
+  f_m = 0x00800000
+      | ((filter_value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1)) << (23 - LOG_MANTISSA_BIT_WIDTH));
+
+  p_s = f_s != i_s;
+  p_e = i_e - f_e;
+  p_m = (i_m * f_m) >> 23;
+
+  if (p_m & 0x01000000)
+  {
+    p_e++;
+    p_m >>= 1;
+  }
+
+  p_magnitude = (0 < p_e) ? (p_m << p_e) : (p_m >> -p_e);
+
+  if (p_s)
+    p_magnitude = ~p_magnitude + 1;
+
+  //*((uint32_t*) &p) = BUILD_FLOAT(p_s, p_e, p_m);
+
+  Total_magnitude += p_magnitude;
+}
+#endif
+
+static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                     hls::stream<StreamChannel> &stream_out,
-                                    ConvProfile & Conv_profile,
-                                    float *       Conv_filter,
-                                    float *       Conv_bias,
+                                    ConvProfile &  Conv_profile,
+                                    CustomFormat * Conv_filter,
+                                    CustomFormat * Conv_bias,
                                     int * debug)
 {
   ///////////////////////////////////////////////////////////////////////////////
@@ -47,6 +115,17 @@ template<typename T>
   static int    AXIStreamOut_index = 0;
   static int    AXIStreamOut_indexLast = 0;
   ///////////////////////////////////////////////////////////////////////////////
+#if HYBRID_LOGARITHMIC
+  SignFormat        Total_sign = 0;
+  ExponentFormat    Total_exponent = 0;
+  MagnitudeFormat   Total_magnitude = 0;
+
+  SignFormat        Bias_sign = 0;
+  ExponentFormat    Bias_exponent = 0;
+  MagnitudeFormat   Bias_mantissa = 0;
+  MagnitudeFormat   Bias_magnitude = 0;
+#endif
+  ///////////////////////////////////////////////////////////////////////////////
 
   ConvProfile * profile = &Conv_profile;
 
@@ -59,7 +138,6 @@ template<typename T>
   TensorShape * filter_shape = &profile->filter_shape_;
   volatile int filter_height = filter_shape->dims_[1];
   volatile int filter_width = filter_shape->dims_[2];
-  float * filter_data = Conv_filter;
 
   TensorShape * output_shape = &profile->output_shape_;
   volatile int output_height = output_shape->dims_[1];
@@ -67,7 +145,7 @@ template<typename T>
   volatile int output_depth = output_shape->dims_[3];
 
   TensorShape * bias_shape = &profile->bias_shape_;
-  float * bias_data = Conv_bias;
+
   bool bias_data_enable = (bias_shape->dims_[0] == output_depth);
 
   int stride_height = profile->parameters_.stride_.height_;
@@ -103,13 +181,13 @@ template<typename T>
 
     StreamPeripheral_rowSize = input_width * input_depth;
 
-    for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
+    INITIALIZE_INPUT_TENSOR_LINE_ROWS: for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
     {
 #pragma HLS pipeline
       StreamPeripheral_lookupTable[row] = AXIStream_index;
       StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
 
-      for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+      INITIALIZE_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
       {
 #pragma HLS pipeline
         channel_in = stream_in.read ();
@@ -146,7 +224,7 @@ template<typename T>
 
           StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
 
-          for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+          READ_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
           {
 #pragma HLS pipeline
             channel_in = stream_in.read ();
@@ -177,6 +255,9 @@ template<typename T>
         {
 #pragma HLS pipeline
           float total = 0.f;
+#if HYBRID_LOGARITHMIC
+          Total_magnitude = 0;
+#endif
           CONV_FILTER_ROW: for (int filter_y = 0; filter_y < filter_height; ++filter_y)
           {
 #pragma HLS pipeline
@@ -222,25 +303,75 @@ template<typename T>
                   input_value = StreamPeripheral_inputBuffer[i];
                 }
 
-                float filter_value = filter_data[Offset (filter_shape,
+                CustomFormat filter_value = Conv_filter[Offset (filter_shape,
                                                          out_channel, filter_y,
                                                          filter_x, in_channel)];
-                total += (input_value * filter_value);
+#if HYBRID_LOGARITHMIC
+                  DotProduct_logarithmic (Total_magnitude, input_value, filter_value);
+#else
+                  total += (input_value * filter_value);
+#endif
               }
             }
           }
+
+#if HYBRID_LOGARITHMIC
+          if (bias_data_enable)
+          {
+            CustomFormat bias_value = Conv_bias[out_channel];
+            if (bias_value != 0)
+            {
+              Bias_sign = bias_value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
+              Bias_exponent = -((bias_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
+                  >> LOG_MANTISSA_BIT_WIDTH);
+              Bias_mantissa = 0x00800000
+                  | ((bias_value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1)) << (23 - LOG_MANTISSA_BIT_WIDTH));
+
+              Bias_magnitude = (0 < Bias_exponent) ?
+                        (Bias_mantissa << Bias_exponent) :
+                        (Bias_mantissa >> -Bias_exponent);
+
+              if (Bias_sign)
+                Bias_magnitude = ~Bias_magnitude + 1;
+
+              Total_magnitude += Bias_magnitude;
+            }
+          }
+
+          if (Total_magnitude != 0)
+          {
+            Total_sign = Total_magnitude < 0;
+            if (Total_sign)
+            {
+              Total_magnitude = ~Total_magnitude + 1;
+            }
+
+            TOTAL_NORMALIZATION_LOOP: for (Total_exponent = 0; !(0x80000000000000 & Total_magnitude); Total_exponent++)
+            { // Normalize
+#pragma HLS pipeline
+              Total_magnitude <<= 1;
+            }
+
+            Total_exponent -= 32;
+            Total_magnitude >>= 32;
+
+            *(uint32_t*) (&total) = BUILD_FLOAT(Total_sign, -Total_exponent, Total_magnitude);
+          }
+#else
           float bias_value = 0.0f;
           if (bias_data_enable)
           {
-            bias_value = bias_data[out_channel];
+            bias_value = Conv_bias[out_channel];
           }
+          total += bias_value;
+#endif
 
           /*out()*/
           {
             Data temp_0;
             Data temp_1;
 
-            AXIStream_outputBuffer[AXIStreamOut_index % 2] = ActivationFunctionWithMinMax (total + bias_value,
+            AXIStream_outputBuffer[AXIStreamOut_index % 2] = ActivationFunctionWithMinMax (total,
                                                                                            output_activation_min,
                                                                                            output_activation_max);
             if (AXIStreamOut_index % 2 == 2 - 1)
@@ -328,173 +459,58 @@ inline void Convolution_loadProfile (hls::stream<StreamChannel> &stream_in,
   Conv_profile.output_shape_.dims_[3] = channel_in.data >> 32;
 }
 
-inline void Convolution_fetchProfile (hls::stream<StreamChannel> &stream_in,
-                                     hls::stream<StreamChannel> &stream_out,
-                                     ConvProfile & Conv_profile,
-                                     int * debug)
-{
-  Data temp_0;
-  Data temp_1;
-
-  *debug = 5;
-  // stride_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.stride_.height_) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.stride_.width_) << 32);
-  stream_out.write (channel_out);
-
-  // dilation_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.dilation_.height_) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.dilation_.width_) << 32);
-  stream_out.write (channel_out);
-
-  // padding_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.padding_.height_) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.parameters_.padding_.width_) << 32);
-  stream_out.write (channel_out);
-
-  // activation_
-  temp_0.f32 = Conv_profile.parameters_.activation_.max_;
-  temp_1.f32 = Conv_profile.parameters_.activation_.min_;
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) temp_0.u32) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) temp_1.u32) << 32);
-  stream_out.write (channel_out);
-
-  // input_shape_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.input_shape_.dims_[0]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.input_shape_.dims_[1]) << 32);
-  stream_out.write (channel_out);
-
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.input_shape_.dims_[2]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.input_shape_.dims_[3]) << 32);
-  stream_out.write (channel_out);
-
-  // filter_shape_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.filter_shape_.dims_[0]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.filter_shape_.dims_[1]) << 32);
-  stream_out.write (channel_out);
-
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.filter_shape_.dims_[2]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.filter_shape_.dims_[3]) << 32);
-  stream_out.write (channel_out);
-
-  // bias_shape_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.bias_shape_.dims_[0]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.bias_shape_.dims_[1]) << 32);
-  stream_out.write (channel_out);
-
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.bias_shape_.dims_[2]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.bias_shape_.dims_[3]) << 32);
-  stream_out.write (channel_out);
-
-  // output_shape_
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.output_shape_.dims_[0]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.output_shape_.dims_[1]) << 32);
-  stream_out.write (channel_out);
-
-  channel_out.data =
-  ((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.output_shape_.dims_[2]) |
-  (((ap_uint<DMA_CHANNEL_WIDTH>) Conv_profile.output_shape_.dims_[3]) << 32);
-  stream_out.write (channel_out);
-}
-
-inline void Convolution_loadFilter (hls::stream<StreamChannel> &stream_in,
+inline void Convolution_loadTensor (hls::stream<StreamChannel> &stream_in,
                                     hls::stream<StreamChannel> &stream_out,
-                                    ConvProfile & Conv_profile,
-                                    float *       Conv_filter,
+                                    TensorShape * tensorShape,
+                                    CustomFormat * tensor,
                                     int * debug)
 {
-  Data temp_0;
-  Data temp_1;
-  volatile int filter_size = FlatSize (&Conv_profile.filter_shape_);
+#if HYBRID_LOGARITHMIC
+  ExponentFormat     exponent[DMA_CHANNEL_FLOAT_WIDTH];
+  MagnitudeFormat    mantissa[DMA_CHANNEL_FLOAT_WIDTH];
+#endif
+
+  Data temp[DMA_CHANNEL_FLOAT_WIDTH];
+
+  volatile int tensor_size = FlatSize (tensorShape);
   *debug = 4;
   // CONV_LOAD_FILTER_LOOP
-  CONV_LOAD_FILTER_LOOP: for (int i = 0; i < filter_size; i += 2)
+  CONV_LOAD_TENSOR_LOOP: for (int i = 0; i < tensor_size; i += DMA_CHANNEL_FLOAT_WIDTH)
   {
 #pragma HLS pipeline
     channel_in = stream_in.read ();
-    temp_0.u32 = channel_in.data;
-    Conv_filter[i] = temp_0.f32;
-    temp_1.u32 = channel_in.data >> 32;
-    Conv_filter[i + 1] = temp_1.f32;
-  }
-}
 
-inline void Convolution_loadBias (hls::stream<StreamChannel> &stream_in,
-                                  hls::stream<StreamChannel> &stream_out,
-                                  ConvProfile & Conv_profile,
-                                  float *       Conv_bias,
-                                  int * debug)
-{
-  Data temp_0;
-  Data temp_1;
-  volatile int bias_size = FlatSize (&Conv_profile.bias_shape_);
-  *debug = 3;
-  // CONV_LOAD_BIAS_LOOP
-  CONV_LOAD_BIAS_LOOP: for (int i = 0; i < bias_size; i += 2)
-  {
-#pragma HLS pipeline
-    channel_in = stream_in.read ();
-    temp_0.u32 = channel_in.data;
-    Conv_bias[i] = temp_0.f32;
-    temp_1.u32 = channel_in.data >> 32;
-    Conv_bias[i + 1] = temp_1.f32;
-  }
-}
+    for (int j = 0; j < DMA_CHANNEL_FLOAT_WIDTH; j++)
+    {
+#pragma HLS unroll
+      temp[j].u32 = channel_in.data >> (8 * sizeof(float) * j);
 
-inline void Convolution_fetchFilter (hls::stream<StreamChannel> &stream_in,
-                                     hls::stream<StreamChannel> &stream_out,
-                                     ConvProfile & Conv_profile,
-                                     float *       Conv_filter,
-                                     int * debug)
-{
-  Data temp_2;
-  Data temp_3;
-  volatile int filter_size = FlatSize (&Conv_profile.filter_shape_);
-  *debug = 2;
-  // CONV_LOAD_FILTER_LOOP
-  CONV_FETCH_FILTER_LOOP: for (int i = 0; i < filter_size; i += 2)
-  {
-//#pragma HLS pipeline
-    temp_2.f32 = Conv_filter[i];
-    temp_3.f32 = Conv_filter[i + 1];
+#if HYBRID_LOGARITHMIC
+      exponent[j] = DATA32_GET_EXPONENT(temp[j].u32);
+      mantissa[j] = DATA32_GET_MANTISSA(temp[j].u32);
 
-    channel_out.data = ((((ap_uint<64> ) temp_3.u32) << 32) & 0xFFFFFFFF00000000) | ((ap_uint<64> ) temp_2.u32);
-    //channel_out.last = filter_size <= i + 2;
-    stream_out.write (channel_out);
-  }
-}
+      if ((LOG_MANTISSA_BIT_WIDTH == 0) && (0x400000 < (0x7FFFFF & mantissa[j])))
+      {
+        exponent[j]++;
+      }
 
-inline void Convolution_fetchBias (hls::stream<StreamChannel> &stream_in,
-                                   hls::stream<StreamChannel> &stream_out,
-                                   ConvProfile & Conv_profile,
-                                   float *       Conv_bias,
-                                   int * debug)
-{
-  Data temp_2;
-  Data temp_3;
-  volatile int bias_size = FlatSize (&Conv_profile.bias_shape_);
-  // CONV_LOAD_BIAS_LOOP
-  *debug = 1;
-  CONV_FETCH_BIAS_LOOP: for (int i = 0; i < bias_size; i += 2)
-  {
-//#pragma HLS pipeline
-    temp_2.f32 = Conv_bias[i];
-    temp_3.f32 = Conv_bias[i + 1];
+      if (exponent[j] < - ((1 << (LOG_FORMAT_BIT_WIDTH - LOG_MANTISSA_BIT_WIDTH - 1)) - 1))
+      {
+        tensor[i + j] = 0;
+      }
+      else
+      {
+        exponent[j] = ~exponent[j] + 1;
 
-    channel_out.data = ((((ap_uint<64> ) temp_3.u32) << 32) & 0xFFFFFFFF00000000) | ((ap_uint<64> ) temp_2.u32);
-    //channel_out.last = bias_size <= i + 2;
-    stream_out.write (channel_out);
+        tensor[i + j] = ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) & (temp[j].u32 >> (32 - LOG_FORMAT_BIT_WIDTH)))
+                        | (exponent[j] << LOG_MANTISSA_BIT_WIDTH)
+                        | ((0x7FFFFF & mantissa[j]) >> (23 - LOG_MANTISSA_BIT_WIDTH));
+      }
+
+#else
+      tensor[i + j] = temp[j].f32;
+#endif
+    }
   }
 }
 
@@ -512,12 +528,12 @@ int conv (ConvExecutionMode mode,
 #pragma HLS INTERFACE s_axilite port=return bundle=CRTL_BUS
 
   ///////////////////////////////////////////////////////////////////////////////
-  #define CONV_FILTER_BUFFER_SIZE 128000
-  #define CONV_BIAS_BUFFER_SIZE   512
+  #define CONV_FILTER_BUFFER_SIZE (256*1024)
+  #define CONV_BIAS_BUFFER_SIZE   (256)
 
   static ConvProfile  Conv_profile;
-  static float        Conv_filter[CONV_FILTER_BUFFER_SIZE];
-  static float        Conv_bias[CONV_BIAS_BUFFER_SIZE];
+  static CustomFormat Conv_filter[CONV_FILTER_BUFFER_SIZE];
+  static CustomFormat Conv_bias[CONV_BIAS_BUFFER_SIZE];
   ///////////////////////////////////////////////////////////////////////////////
 
 //#pragma HLS DATAFLOW
@@ -531,29 +547,11 @@ int conv (ConvExecutionMode mode,
   {
     case CONV_LOAD_PROFILE_PACKAGE:
       Convolution_loadProfile  (stream_in, stream_out, Conv_profile, debug);
-      Convolution_loadFilter   (stream_in, stream_out, Conv_profile, Conv_filter, debug);
-      Convolution_loadBias     (stream_in, stream_out, Conv_profile, Conv_bias, debug);
+      Convolution_loadTensor   (stream_in, stream_out, &Conv_profile.filter_shape_, Conv_filter, debug);
+      Convolution_loadTensor   (stream_in, stream_out, &Conv_profile.bias_shape_, Conv_bias, debug);
       break;
-//    case CONV_LOAD_PROFILE:
-//      Convolution_loadProfile  (stream_in, stream_out, debug);
-//      break;
-    case CONV_FETCH_PROFILE:
-      Convolution_fetchProfile (stream_in, stream_out, Conv_profile, debug);
-      break;
-//    case CONV_LOAD_FILTER:
-//      Convolution_loadFilter   (stream_in, stream_out, debug);
-//      break;
-//    case CONV_FETCH_FILTER:
-//      Convolution_fetchFilter  (stream_in, stream_out, debug);
-//      break;
-//    case CONV_LOAD_BIAS:
-//      Convolution_loadBias     (stream_in, stream_out, debug);
-//      break;
-//    case CONV_FETCH_BIAS:
-//      Convolution_fetchBias    (stream_in, stream_out, debug);
-//      break;
     case CONV_EXECUTION:
-      Convolution_execution<float> (stream_in, stream_out, Conv_profile, Conv_filter, Conv_bias, debug);
+      Convolution_execution (stream_in, stream_out, Conv_profile, Conv_filter, Conv_bias, debug);
       break;
     default:
       rc = -1;
