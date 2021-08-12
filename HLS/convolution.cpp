@@ -37,6 +37,69 @@ inline T ActivationFunctionWithMinMax(T x, T output_activation_min,
 #define Offset(shape, i0, i1, i2, i3) ((((i0) * (shape)->dims_[1] + i1) * (shape)->dims_[2] + (i2)) * (shape)->dims_[3] + (i3))
 
 #if HYBRID_LOGARITHMIC
+inline MagnitudeFormat Float_denormalize (float value)
+{
+  Data data;
+  SignFormat sign = 0;
+  ExponentFormat exponent = 0;
+  MagnitudeFormat mantissa = 0;
+  MagnitudeFormat magnitude = 0;
+
+  data.f32 = value;
+
+  if (data.u32)
+  {
+    sign = DATA32_GET_SIGN(data.u32);
+    exponent = DATA32_GET_EXPONENT(data.u32);
+    mantissa = DATA32_GET_MANTISSA(data.u32);
+    magnitude =
+        (0 < exponent) ? (mantissa << exponent) : (mantissa >> -exponent);
+
+    if (32 < exponent)
+      magnitude = (((MagnitudeFormat)(1)) << 63) - 1;
+
+    if (sign)
+      magnitude = ~magnitude + 1;
+  }
+
+  return magnitude;
+}
+
+inline MagnitudeFormat Custom_denormalize (CustomFormat value)
+{
+  SignFormat sign = 0;
+  ExponentFormat exponent = 0;
+  MagnitudeFormat mantissa = 0;
+  MagnitudeFormat magnitude = 0;
+
+  if (value)
+  {
+    sign = value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
+    exponent = -((value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
+        >> LOG_MANTISSA_BIT_WIDTH);
+    mantissa = 0x00800000
+        | ((value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1))
+            << (23 - LOG_MANTISSA_BIT_WIDTH));
+
+    magnitude =
+        (0 < exponent) ? (mantissa << exponent) : (mantissa >> -exponent);
+
+    if (sign)
+      magnitude = ~magnitude + 1;
+  }
+
+  return magnitude;
+}
+
+inline MagnitudeFormat ActivationFunctionWithMinMaxMagnitude (MagnitudeFormat x,
+                                       MagnitudeFormat output_activation_min,
+                                       MagnitudeFormat output_activation_max)
+{
+
+  return (x < output_activation_min) ? output_activation_min :
+         (output_activation_max < x) ? output_activation_max : x;
+}
+
 inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
                                     float & input_value,
                                     CustomFormat & filter_value)
@@ -62,18 +125,18 @@ inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
   if (input_data.u32 == 0 || filter_value == 0)
     return;
 
-  i_s = (input_data.u32 & 0x80000000);
+  i_s = DATA32_GET_SIGN(input_data.u32);
   i_e = DATA32_GET_EXPONENT(input_data.u32);
   i_m = DATA32_GET_MANTISSA(input_data.u32);
 
   f_s = filter_value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
-  f_e = (filter_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
-      >> LOG_MANTISSA_BIT_WIDTH;
+  f_e = -((filter_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
+      >> LOG_MANTISSA_BIT_WIDTH);
   f_m = 0x00800000
       | ((filter_value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1)) << (23 - LOG_MANTISSA_BIT_WIDTH));
 
-  p_s = f_s != i_s;
-  p_e = i_e - f_e;
+  p_s = i_s != f_s;
+  p_e = i_e + f_e;
   p_m = (i_m * f_m) >> 23;
 
   if (p_m & 0x01000000)
@@ -86,8 +149,6 @@ inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
 
   if (p_s)
     p_magnitude = ~p_magnitude + 1;
-
-  //*((uint32_t*) &p) = BUILD_FLOAT(p_s, p_e, p_m);
 
   Total_magnitude += p_magnitude;
 }
@@ -119,11 +180,9 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   SignFormat        Total_sign = 0;
   ExponentFormat    Total_exponent = 0;
   MagnitudeFormat   Total_magnitude = 0;
-
-  SignFormat        Bias_sign = 0;
-  ExponentFormat    Bias_exponent = 0;
-  MagnitudeFormat   Bias_mantissa = 0;
-  MagnitudeFormat   Bias_magnitude = 0;
+  ///////////////////////////////////////////////////////////////////////////////
+  MagnitudeFormat   Activation_max_magnitude = 0;
+  MagnitudeFormat   Activation_min_magnitude = 0;
 #endif
   ///////////////////////////////////////////////////////////////////////////////
 
@@ -160,8 +219,14 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   float output_activation_max = profile->parameters_.activation_.max_;
   float output_activation_min = profile->parameters_.activation_.min_;
 
-  *debug = 7;
+  float activation_output = 0;
 
+  ///////////////////////////////////////////////////////////////////////////////
+#if HYBRID_LOGARITHMIC
+  Activation_max_magnitude = Float_denormalize (output_activation_max);
+  Activation_min_magnitude = Float_denormalize (output_activation_min);
+#endif
+  ///////////////////////////////////////////////////////////////////////////////
   /*Initialize ()*/
   {
     Data temp_0;
@@ -318,25 +383,12 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
 #if HYBRID_LOGARITHMIC
           if (bias_data_enable)
           {
-            CustomFormat bias_value = Conv_bias[out_channel];
-            if (bias_value != 0)
-            {
-              Bias_sign = bias_value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
-              Bias_exponent = -((bias_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
-                  >> LOG_MANTISSA_BIT_WIDTH);
-              Bias_mantissa = 0x00800000
-                  | ((bias_value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1)) << (23 - LOG_MANTISSA_BIT_WIDTH));
-
-              Bias_magnitude = (0 < Bias_exponent) ?
-                        (Bias_mantissa << Bias_exponent) :
-                        (Bias_mantissa >> -Bias_exponent);
-
-              if (Bias_sign)
-                Bias_magnitude = ~Bias_magnitude + 1;
-
-              Total_magnitude += Bias_magnitude;
-            }
+              Total_magnitude += Custom_denormalize (Conv_bias[out_channel]);
           }
+
+          Total_magnitude = ActivationFunctionWithMinMaxMagnitude (Total_magnitude,
+                                                            Activation_min_magnitude,
+                                                            Activation_max_magnitude);
 
           if (Total_magnitude != 0)
           {
@@ -355,7 +407,11 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
             Total_exponent -= 32;
             Total_magnitude >>= 32;
 
-            *(uint32_t*) (&total) = BUILD_FLOAT(Total_sign, -Total_exponent, Total_magnitude);
+            *(uint32_t*) (&activation_output) = BUILD_FLOAT(Total_sign, -Total_exponent, Total_magnitude);
+          }
+          else
+          {
+            *(uint32_t*) (&activation_output) = 0;
           }
 #else
           float bias_value = 0.0f;
@@ -364,24 +420,25 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
             bias_value = Conv_bias[out_channel];
           }
           total += bias_value;
+
+          activation_output = ActivationFunctionWithMinMax (total,
+                                                            output_activation_min,
+                                                            output_activation_max);
 #endif
 
           /*out()*/
           {
-            Data temp_0;
-            Data temp_1;
-
-            AXIStream_outputBuffer[AXIStreamOut_index % 2] = ActivationFunctionWithMinMax (total,
-                                                                                           output_activation_min,
-                                                                                           output_activation_max);
+            AXIStream_outputBuffer[AXIStreamOut_index % 2] = activation_output;
             if (AXIStreamOut_index % 2 == 2 - 1)
             {
+              Data temp_0;
+              Data temp_1;
               temp_0.f32 = AXIStream_outputBuffer[0];
               temp_1.f32 = AXIStream_outputBuffer[1];
-              channel_out.data =
-              ((ap_uint<DMA_CHANNEL_WIDTH>) temp_0.u32) |
-              (((ap_uint<DMA_CHANNEL_WIDTH>) temp_1.u32) << 32);
-              channel_out.last = (AXIStreamOut_index + 1) == AXIStreamOut_indexLast;
+              channel_out.data = ((ap_uint<DMA_CHANNEL_WIDTH> ) temp_0.u32)
+                  | (((ap_uint<DMA_CHANNEL_WIDTH> ) temp_1.u32) << 32);
+              channel_out.last = (AXIStreamOut_index + 1)
+                  == AXIStreamOut_indexLast;
               stream_out.write (channel_out);
             }
             AXIStreamOut_index ++;
