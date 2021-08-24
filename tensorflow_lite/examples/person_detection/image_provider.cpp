@@ -17,31 +17,6 @@ limitations under the License.
 
 #include "model_settings.h"
 
-extern unsigned char airplane[];
-extern unsigned char automobile[];
-extern unsigned char bird[];
-extern unsigned char cat[];
-extern unsigned char deer[];
-extern unsigned char dog[];
-extern unsigned char frog[];
-extern unsigned char horse[];
-extern unsigned char ship[];
-extern unsigned char truck[];
-
-unsigned char * images[kCategoryCount] =
-{
-    airplane,
-    automobile,
-    bird,
-    cat,
-    deer,
-    dog,
-    frog,
-    horse,
-    ship,
-    truck
-};
-
 TfLiteStatus GetImage (tflite::ErrorReporter* error_reporter,
                        int image_index,
                        int image_width,
@@ -55,7 +30,7 @@ TfLiteStatus GetImage (tflite::ErrorReporter* error_reporter,
 
   for (size_t i = 0; i < image_size; ++i)
   {
-    image_data[i] = images[image_index][i] / 255.0;
+    image_data[i] = 1 / 255.0;
   }
 
   return kTfLiteOk;

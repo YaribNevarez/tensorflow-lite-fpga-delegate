@@ -232,7 +232,7 @@ static NavigationReturn Event_navegate (Event * event,
 
 /*****************************************************************************/
 
-typedef char TextLines[4][512];
+typedef char TextLines[4][4096];
 
 static NavigationReturn Event_collectScheduleData (Event * event, void * data)
 {

@@ -20,6 +20,9 @@ def save_binary(name, image, label):
   plt.imshow(image)
   plt.show()
 
+if not os.path.exists('CIFAR'):
+  os.mkdir("CIFAR")
+
 for i in range(5):
   save_binary(str(i), test_images[i], test_labels[i][0])
 

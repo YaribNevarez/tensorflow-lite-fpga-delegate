@@ -27,6 +27,12 @@ limitations under the License.
 #include "tensorflow/lite/micro/all_ops_resolver.h"
 #include "tensorflow/lite/micro/system_setup.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+////////////////////////////////////////////////////////////////////
+// Xilinx libraries
+#include "ff.h"
+#include "xstatus.h"
+#include "miscellaneous.h"
+
 
 // Globals, used for compatibility with Arduino-style sketches.
 namespace {
@@ -43,16 +49,52 @@ TfLiteTensor* input = nullptr;
 // signed value.
 
 // An area of memory to use for input, output, and intermediate arrays.
-constexpr int kTensorArenaSize = 1024 * 1024;
+constexpr int kTensorArenaSize = 128 * 1024 * 1024;
 static uint8_t tensor_arena[kTensorArenaSize];
 }  // namespace
 
-extern unsigned char cifar_cnn_tflite[];
+static FATFS fatfs;
+static FRESULT File_initializeSD (void)
+{
+  TCHAR *path = "0:/"; /* Logical drive number is 0 */
+  /* Register volume work area, initialize device */
+  return f_mount (&fatfs, path, 0);
+}
+
+static FRESULT File_readData (const char * file_name, void * model, size_t model_size)
+{
+  FIL fil; /* File object */
+  FRESULT rc;
+  size_t read_result = 0;
+
+  rc = f_open (&fil, file_name, FA_READ);
+  ASSERT(rc == FR_OK);
+  if (rc == FR_OK)
+  {
+    rc = f_read (&fil, model, model_size, &read_result);
+    ASSERT(rc == FR_OK);
+
+    rc = f_close (&fil);
+    ASSERT(rc == FR_OK);
+  }
+
+  return rc;
+}
+
+
+unsigned char model_data[13988516];
 
 // The name of this function is important for Arduino compatibility.
 void setup ()
 {
+  FRESULT rc;
   tflite::InitializeTarget ();
+
+  rc = File_initializeSD ();
+  ASSERT(rc == FR_OK);
+
+  rc = File_readData ("mobnetv2", model_data, 13988516);
+  ASSERT(rc == FR_OK);
 
   // Set up logging. Google style is to avoid globals or statics because of
   // lifetime uncertainty, but since this has a trivial destructor it's okay.
@@ -62,7 +104,7 @@ void setup ()
 
   // Map the model into a usable data structure. This doesn't involve any
   // copying or parsing, it's a very lightweight operation.
-  model = tflite::GetModel (cifar_cnn_tflite);
+  model = tflite::GetModel (model_data);
   if (model->version () != TFLITE_SCHEMA_VERSION)
   {
     TF_LITE_REPORT_ERROR(error_reporter,
@@ -118,6 +160,8 @@ void setup ()
 // The name of this function is important for Arduino compatibility.
 void loop ()
 {
+  FRESULT rc;
+
   TfLiteStatus status;
   static int image_index = 0;
 
@@ -126,12 +170,15 @@ void loop ()
     image_index = 0;
   }
 
-  status = GetImage (error_reporter,
-                     image_index,
-                     input->dims->data[1],
-                     input->dims->data[2],
-                     input->dims->data[3],
-                     input->data.f);
+//  status = GetImage (error_reporter,
+//                     image_index,
+//                     input->dims->data[1],
+//                     input->dims->data[2],
+//                     input->dims->data[3],
+//                     input->data.f);
+
+  rc = File_readData ("car", input->data.data, 602112);
+  ASSERT(rc == FR_OK);
 
   if (status != kTfLiteOk)
   {

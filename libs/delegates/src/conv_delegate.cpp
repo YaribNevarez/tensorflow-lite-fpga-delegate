@@ -36,11 +36,17 @@ void Tensor_histogram (float * tensor, size_t tensor_len, const char * name)
 {
   typedef struct
   {
+    int len_positive;
+    int len_negative;
+    int positive[128];
+    int negative[128];
+  } LogSpice;
+
+  typedef struct
+  {
     int total_samples;
-    int bin_array_len_positive;
-    int bin_array_len_negative;
-    int bin_array_positive[32];
-    int bin_array_negative[32];
+    LogSpice positive;
+    LogSpice negative;
   } Histogram;
 
   typedef union
@@ -63,25 +69,45 @@ void Tensor_histogram (float * tensor, size_t tensor_len, const char * name)
 
     exponent -= 127;
 
-    ASSERT (exponent < 0);
     if (exponent < 0)
     {
       if (data[i].i32 & 0x80000000)
       { // Negative
-        histogram.bin_array_negative[-exponent] ++;
+        histogram.negative.negative[-exponent] ++;
 
-        if (histogram.bin_array_len_negative < -exponent)
+        if (histogram.negative.len_negative < -exponent)
         {
-          histogram.bin_array_len_negative = -exponent;
+          histogram.negative.len_negative = -exponent;
         }
       }
       else
       { // Positive
-        histogram.bin_array_positive[-exponent] ++;
+        histogram.negative.positive[-exponent] ++;
 
-        if (histogram.bin_array_len_positive < -exponent)
+        if (histogram.negative.len_positive < -exponent)
         {
-          histogram.bin_array_len_positive = -exponent;
+          histogram.negative.len_positive = -exponent;
+        }
+      }
+    }
+    else
+    {
+      if (data[i].i32 & 0x80000000)
+      { // Negative
+        histogram.positive.negative[exponent] ++;
+
+        if (histogram.positive.len_negative < exponent)
+        {
+          histogram.positive.len_negative = exponent;
+        }
+      }
+      else
+      { // Positive
+        histogram.positive.positive[exponent] ++;
+
+        if (histogram.positive.len_positive < exponent)
+        {
+          histogram.positive.len_positive = exponent;
         }
       }
     }
@@ -89,32 +115,50 @@ void Tensor_histogram (float * tensor, size_t tensor_len, const char * name)
 
   histogram.total_samples = tensor_len;
   ///////////////////////////////////////////////////////////////////
-  if (histogram.bin_array_len_negative < 32)
+  if (histogram.negative.len_negative < 128)
   {
     printf ("Tensor Log-2 histogram\n");
 
-    if (histogram.bin_array_positive[0] || histogram.bin_array_negative[0])
-    {
-      printf ("Error, out of range (denormalized)\n");
-    }
-
+    printf ("\nNegative exponent:\n");
     //////////////////// Negative
     printf ("\n%s_positive_histogram = { ", name);
-    for (int i = histogram.bin_array_len_negative; 0 < i; i--)
+    for (int i = histogram.negative.len_negative; 0 <= i; i--)
     {
       printf (
-          "'$-2^{-%d}$':%.2f%s", i, ((float)histogram.bin_array_negative[i])/((float)histogram.total_samples),
-          (1 < i) ? ", " : "");
+          "'$-2^{-%d}$':%.2f%s", i, ((float)histogram.negative.negative[i])/((float)histogram.total_samples),
+          (1 <= i) ? ", " : "");
     }
     printf (" } ");
 
     //////////////////// Positive
     printf ("\n%s_negative_histogram = { ", name);
-    for (int i = 1; i < histogram.bin_array_len_positive; i++)
+    for (int i = 0; i < histogram.negative.len_positive; i++)
     {
       printf (
-          "'$+2^{-%d}$':%.2f%s", i, ((float)histogram.bin_array_positive[i])/((float)histogram.total_samples),
-          (i < histogram.bin_array_len_positive - 1) ? ", " : "");
+          "'$+2^{-%d}$':%.2f%s", i, ((float)histogram.negative.positive[i])/((float)histogram.total_samples),
+          (i < histogram.negative.len_positive - 1) ? ", " : "");
+    }
+    printf (" } ");
+
+
+    printf ("\nPositive exponent:\n");
+    //////////////////// Negative
+    printf ("\n%s_positive_histogram = { ", name);
+    for (int i = histogram.positive.len_negative; 0 <= i; i--)
+    {
+      printf (
+          "'$-2^{-%d}$':%.2f%s", i, ((float)histogram.positive.negative[i])/((float)histogram.total_samples),
+          (1 <= i) ? ", " : "");
+    }
+    printf (" } ");
+
+    //////////////////// Positive
+    printf ("\n%s_negative_histogram = { ", name);
+    for (int i = 0; i < histogram.positive.len_positive; i++)
+    {
+      printf (
+          "'$+2^{-%d}$':%.2f%s", i, ((float)histogram.positive.positive[i])/((float)histogram.total_samples),
+          (i < histogram.positive.len_positive - 1) ? ", " : "");
     }
     printf (" } ");
 
@@ -188,9 +232,9 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
 
   txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
 
-  txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, 1024 * 1024);
-  memset (txBufferPtr, 0, 1024 * 1024);
-  Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, 1024 * 1024);
+  txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
+  memset (txBufferPtr, 0, txBufferSize);
+  Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, txBufferSize);
 
   nodeSettings.setup.mode = CONV_LOAD_PROFILE_PACKAGE;
   nodeSettings.setup.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
