@@ -93,7 +93,7 @@ void setup ()
   rc = File_initializeSD ();
   ASSERT(rc == FR_OK);
 
-  rc = File_readData ("mobnetv2", model_data, 13988516);
+  rc = File_readData ("cifar", model_data, 13988516);
   ASSERT(rc == FR_OK);
 
   // Set up logging. Google style is to avoid globals or statics because of
@@ -177,7 +177,7 @@ void loop ()
 //                     input->dims->data[3],
 //                     input->data.f);
 
-  rc = File_readData ("car", input->data.data, 602112);
+  rc = File_readData ("dog32x32", input->data.data, 12288);
   ASSERT(rc == FR_OK);
 
   if (status != kTfLiteOk)

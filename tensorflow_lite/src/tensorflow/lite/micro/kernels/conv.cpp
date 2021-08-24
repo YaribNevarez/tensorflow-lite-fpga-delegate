@@ -94,11 +94,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-//      if (delegate_ != nullptr)
-//      {
-//        delegate_->execute (&delegate_profile.profile);
-//      }
-//      else
+      if (delegate_ != nullptr)
+      {
+        delegate_->execute (&delegate_profile.profile);
+      }
+      else
       {
         tflite::reference_ops::Conv(
             ConvParamsFloat(params, data), tflite::micro::GetTensorShape(input),

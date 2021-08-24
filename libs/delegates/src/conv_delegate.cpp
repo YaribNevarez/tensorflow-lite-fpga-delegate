@@ -296,7 +296,47 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
 
   nodeSettings.event = Event_new (parent, EVENT_HARDWARE, (void *) "CONV_HW");
 
+  /////////////////////////////////////////////////////////
+  static int filter_max = 0;
+  static int inputbuffer_max = 0;
+  static int bias_max = 0;
+
   Tensor_histogram ((float *) filter_data, filter_shape.FlatSize (), "Filter");
+
+  printf ("Input shape: [%d, %d, %d, %d], Flat size = %d \n",
+            input_shape.Dims (0),
+            input_shape.Dims (1),
+            input_shape.Dims (2),
+            input_shape.Dims (3),
+            input_shape.FlatSize ());
+
+  printf ("Filter shape: [%d, %d, %d, %d], Flat size = %d \n",
+          filter_shape.Dims (0),
+          filter_shape.Dims (1),
+          filter_shape.Dims (2),
+          filter_shape.Dims (3),
+          filter_shape.FlatSize ());
+
+  printf ("Bias shape: [%d], Flat size = %d \n",
+          bias_shape.Dims (0),
+          bias_shape.FlatSize ());
+
+  printf ("Input buffer shape: [%d, %d, %d], Flat size = %d \n",
+          filter_shape.Dims (1),
+          input_shape.Dims (2),
+          input_shape.Dims (3),
+          filter_shape.Dims (1) * input_shape.Dims (2) * input_shape.Dims (3));
+
+  if (filter_max < filter_shape.FlatSize ())
+    filter_max = filter_shape.FlatSize ();
+
+  if (bias_max < bias_shape.FlatSize ())
+    bias_max = bias_shape.FlatSize ();
+
+  if (inputbuffer_max < filter_shape.Dims (1) * input_shape.Dims (2) * input_shape.Dims (3))
+    inputbuffer_max = filter_shape.Dims (1) * input_shape.Dims (2) * input_shape.Dims (3);
+
+  printf ("Filter max size = %d, Bias max size = %d, Input buffer max size = %d \n", filter_max, bias_max, inputbuffer_max);
 
   return nodeSettings;
 }

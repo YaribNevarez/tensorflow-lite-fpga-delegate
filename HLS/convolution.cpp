@@ -3,9 +3,23 @@
 #include <stdint.h>
 #include <algorithm>
 
-#define HYBRID_LOGARITHMIC      true
-#define LOG_FORMAT_BIT_WIDTH    8
-#define LOG_MANTISSA_BIT_WIDTH  3
+#define HYBRID_LOGARITHMIC          true
+#define CUSTOM_SIGN_BIT             1
+#define CUSTOM_EXPONENT_BIT_WIDTH   4
+#define CUSTOM_MANTISSA_BIT_WIDTH   3
+
+// Set to 0 for normalized numbers [0 - 1), All exponents are on the left side, so they are stored without sign
+#define CUSTOM_EXPONENT_SIGN_BIT    1
+
+#define CUSTOM_GET_SIGN(x)            ((1 << ((CUSTOM_EXPONENT_BIT_WIDTH)+(CUSTOM_MANTISSA_BIT_WIDTH))) & (x))
+#define CUSTOM_GET_EXPONENT(x)        (((1 << (CUSTOM_EXPONENT_BIT_WIDTH)) - 1) & ((x) >> (CUSTOM_MANTISSA_BIT_WIDTH)))
+#define CUSTOM_GET_EXPONENT_SIGN(x)   (CUSTOM_GET_EXPONENT(x) & (1 << ((CUSTOM_EXPONENT_BIT_WIDTH) - 1)))
+#define CUSTOM_GET_MANTISSA(x)        (((1 << (CUSTOM_MANTISSA_BIT_WIDTH)) | (((1 << (CUSTOM_MANTISSA_BIT_WIDTH)) - 1) & (x))) << (23 - (CUSTOM_MANTISSA_BIT_WIDTH)))
+
+
+#define CUSTOM_FORMAT_BIT_WIDTH   (CUSTOM_SIGN_BIT + CUSTOM_EXPONENT_BIT_WIDTH + CUSTOM_MANTISSA_BIT_WIDTH)
+#define BUILD_CUSTOM(s, exponent, mantissa) (((s!=0) << (CUSTOM_EXPONENT_BIT_WIDTH + CUSTOM_MANTISSA_BIT_WIDTH)) | ((((1 << CUSTOM_EXPONENT_BIT_WIDTH) - 1) & (exponent)) << CUSTOM_MANTISSA_BIT_WIDTH) | (((mantissa) >> (23 - CUSTOM_MANTISSA_BIT_WIDTH)) & ((1 << CUSTOM_MANTISSA_BIT_WIDTH) - 1)))
+
 
 #if HYBRID_LOGARITHMIC
 typedef uint8_t         CustomFormat;
@@ -74,12 +88,13 @@ inline MagnitudeFormat Custom_denormalize (CustomFormat value)
 
   if (value)
   {
-    sign = value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
-    exponent = -((value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
-        >> LOG_MANTISSA_BIT_WIDTH);
-    mantissa = 0x00800000
-        | ((value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1))
-            << (23 - LOG_MANTISSA_BIT_WIDTH));
+    sign = CUSTOM_GET_SIGN(value);
+#if CUSTOM_EXPONENT_SIGN_BIT
+    exponent = (ap_int<CUSTOM_EXPONENT_BIT_WIDTH>)CUSTOM_GET_EXPONENT(value);
+#else
+    exponent = -(ap_uint<CUSTOM_EXPONENT_BIT_WIDTH>)CUSTOM_GET_EXPONENT(value);
+#endif
+    mantissa = CUSTOM_GET_MANTISSA(value);
 
     magnitude =
         (0 < exponent) ? (mantissa << exponent) : (mantissa >> -exponent);
@@ -129,11 +144,13 @@ inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
   i_e = DATA32_GET_EXPONENT(input_data.u32);
   i_m = DATA32_GET_MANTISSA(input_data.u32);
 
-  f_s = filter_value & (1 << (LOG_FORMAT_BIT_WIDTH - 1));
-  f_e = -((filter_value & ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) - 1))
-      >> LOG_MANTISSA_BIT_WIDTH);
-  f_m = 0x00800000
-      | ((filter_value & ((1 << LOG_MANTISSA_BIT_WIDTH) - 1)) << (23 - LOG_MANTISSA_BIT_WIDTH));
+  f_s = CUSTOM_GET_SIGN(filter_value);
+#if CUSTOM_EXPONENT_SIGN_BIT
+  f_e = (ap_int<CUSTOM_EXPONENT_BIT_WIDTH>)CUSTOM_GET_EXPONENT(filter_value);
+#else
+  f_e = -(ap_uint<CUSTOM_EXPONENT_BIT_WIDTH>)CUSTOM_GET_EXPONENT(filter_value);
+#endif
+  f_m = CUSTOM_GET_MANTISSA(filter_value);
 
   p_s = i_s != f_s;
   p_e = i_e + f_e;
@@ -162,7 +179,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                     int * debug)
 {
   ///////////////////////////////////////////////////////////////////////////////
-  static float  StreamPeripheral_inputBuffer[3072] = {0};
+  static float  StreamPeripheral_inputBuffer[8064] = {0};
   static int    StreamPeripheral_yOffset = 0;
   static int    StreamPeripheral_lookupTable[32] = {0};
   static int    StreamPeripheral_lookupTableRows[32] = {0};
@@ -523,6 +540,7 @@ inline void Convolution_loadTensor (hls::stream<StreamChannel> &stream_in,
                                     int * debug)
 {
 #if HYBRID_LOGARITHMIC
+  SignFormat         sign[DMA_CHANNEL_FLOAT_WIDTH];
   ExponentFormat     exponent[DMA_CHANNEL_FLOAT_WIDTH];
   MagnitudeFormat    mantissa[DMA_CHANNEL_FLOAT_WIDTH];
 #endif
@@ -543,25 +561,30 @@ inline void Convolution_loadTensor (hls::stream<StreamChannel> &stream_in,
       temp[j].u32 = channel_in.data >> (8 * sizeof(float) * j);
 
 #if HYBRID_LOGARITHMIC
+      sign[j] = DATA32_GET_SIGN(temp[j].u32);
       exponent[j] = DATA32_GET_EXPONENT(temp[j].u32);
       mantissa[j] = DATA32_GET_MANTISSA(temp[j].u32);
 
-      if ((LOG_MANTISSA_BIT_WIDTH == 0) && (0x400000 < (0x7FFFFF & mantissa[j])))
+      if ((CUSTOM_MANTISSA_BIT_WIDTH == 0) && (0x400000 < (0x7FFFFF & mantissa[j])))
       {
         exponent[j]++;
       }
 
-      if (exponent[j] < - ((1 << (LOG_FORMAT_BIT_WIDTH - LOG_MANTISSA_BIT_WIDTH - 1)) - 1))
+      if (exponent[j] < - ((1 << (CUSTOM_EXPONENT_BIT_WIDTH - CUSTOM_EXPONENT_SIGN_BIT)) - 1))
       {
         tensor[i + j] = 0;
       }
+      else if (exponent[j] > ((1 << (CUSTOM_EXPONENT_BIT_WIDTH - CUSTOM_EXPONENT_SIGN_BIT)) - 1))
+      {
+        tensor[i + j] = BUILD_CUSTOM(sign[j], ((1 << (CUSTOM_EXPONENT_BIT_WIDTH - CUSTOM_EXPONENT_SIGN_BIT)) - 1), 0xFFFFFFFF);
+      }
       else
       {
-        exponent[j] = ~exponent[j] + 1;
-
-        tensor[i + j] = ((1 << (LOG_FORMAT_BIT_WIDTH - 1)) & (temp[j].u32 >> (32 - LOG_FORMAT_BIT_WIDTH)))
-                        | (exponent[j] << LOG_MANTISSA_BIT_WIDTH)
-                        | ((0x7FFFFF & mantissa[j]) >> (23 - LOG_MANTISSA_BIT_WIDTH));
+#if CUSTOM_EXPONENT_SIGN_BIT
+        tensor[i + j] = BUILD_CUSTOM(sign[j], exponent[j], mantissa[j]);
+#else
+        tensor[i + j] = BUILD_CUSTOM(sign[j], -exponent[j], mantissa[j]);
+#endif
       }
 
 #else
@@ -585,8 +608,8 @@ int conv (ConvExecutionMode mode,
 #pragma HLS INTERFACE s_axilite port=return bundle=CRTL_BUS
 
   ///////////////////////////////////////////////////////////////////////////////
-  #define CONV_FILTER_BUFFER_SIZE (256*1024)
-  #define CONV_BIAS_BUFFER_SIZE   (256)
+  #define CONV_FILTER_BUFFER_SIZE (409600)
+  #define CONV_BIAS_BUFFER_SIZE   (1280)
 
   static ConvProfile  Conv_profile;
   static CustomFormat Conv_filter[CONV_FILTER_BUFFER_SIZE];
