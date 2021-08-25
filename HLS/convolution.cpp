@@ -22,7 +22,7 @@
 
 
 #if HYBRID_LOGARITHMIC
-typedef uint8_t         CustomFormat;
+typedef ap_uint<CUSTOM_FORMAT_BIT_WIDTH> CustomFormat;
 typedef int64_t         MagnitudeFormat;
 typedef int8_t          ExponentFormat;
 typedef bool            SignFormat;
@@ -77,6 +77,39 @@ inline MagnitudeFormat Float_denormalize (float value)
   }
 
   return magnitude;
+}
+
+inline float Float_normalize (MagnitudeFormat magnitude)
+{
+  SignFormat        sign = 0;
+  ExponentFormat    exponent = 0;
+  float             value;
+
+  if (magnitude != 0)
+  {
+    sign = magnitude < 0;
+    if (sign)
+    {
+      magnitude = ~magnitude + 1;
+    }
+
+    TOTAL_NORMALIZATION_LOOP: for (exponent = 0; !(0x80000000000000 & magnitude); exponent++)
+    { // Normalize
+#pragma HLS pipeline
+      magnitude <<= 1;
+    }
+
+    exponent -= 32;
+    magnitude >>= 32;
+
+    *(uint32_t*) (&value) = BUILD_FLOAT(sign, -exponent, magnitude);
+  }
+  else
+  {
+    *(uint32_t*) (&value) = 0;
+  }
+
+  return value;
 }
 
 inline MagnitudeFormat Custom_denormalize (CustomFormat value)
@@ -171,6 +204,152 @@ inline void DotProduct_logarithmic (MagnitudeFormat & Total_magnitude,
 }
 #endif
 
+///////////////////////////////////////////////////////////////////////////////
+static float StreamPeripheral_inputBuffer[8064] = { 0 };
+static int StreamPeripheral_yOffset = 0;
+static int StreamPeripheral_lookupTable[32] = { 0 };
+static int StreamPeripheral_lookupTableRows[32] = { 0 };
+static int StreamPeripheral_lookupIndex = 0;
+static int StreamPeripheral_lookupLength = 0;
+static int StreamPeripheral_rowCount = 0;
+static int StreamPeripheral_rowSize = 0;
+static TensorShape StreamPeripheral_inputShape = { 0 };
+///////////////////////////////////////////////////////////////////////////////
+static int AXIStream_index = 0;
+static float AXIStream_outputBuffer[2] = { 0 };
+static int AXIStreamOut_index = 0;
+static int AXIStreamOut_indexLast = 0;
+///////////////////////////////////////////////////////////////////////////////
+
+inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
+                                   TensorShape * input_shape,
+                                   TensorShape * filter_shape,
+                                   TensorShape * output_shape)
+{
+  Data temp_0;
+  Data temp_1;
+
+  AXIStream_index = 0;
+
+  AXIStreamOut_index = 0;
+
+  AXIStreamOut_indexLast = FlatSize(output_shape);
+
+  StreamPeripheral_lookupLength = filter_shape->dims_[1]; // Filter height
+
+  StreamPeripheral_lookupIndex = StreamPeripheral_lookupLength - 1;
+
+  StreamPeripheral_rowCount = 0;
+
+  StreamPeripheral_rowSize = input_shape->dims_[2] * input_shape->dims_[3]; // input_width * input_depth;
+
+  StreamPeripheral_inputShape = *input_shape;
+
+  INITIALIZE_INPUT_TENSOR_LINE_ROWS: for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
+  {
+#pragma HLS pipeline
+    StreamPeripheral_lookupTable[row] = AXIStream_index;
+    StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
+
+    INITIALIZE_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+    {
+#pragma HLS pipeline
+      channel_in = stream_in.read ();
+      temp_0.u32 = channel_in.data;
+      temp_1.u32 = channel_in.data >> 32;
+
+      StreamPeripheral_inputBuffer[AXIStream_index + j + 0] = temp_0.f32;
+      StreamPeripheral_inputBuffer[AXIStream_index + j + 1] = temp_1.f32;
+    }
+    AXIStream_index += StreamPeripheral_rowSize;
+  }
+
+  StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = AXIStream_index;
+}
+
+inline void StreamPeripheral_pushRowBuffer(hls::stream<StreamChannel> &stream_in,
+                                           const int in_y_origin)
+{
+  Data temp_0;
+  Data temp_1;
+
+  if (0 <= in_y_origin && StreamPeripheral_rowCount < StreamPeripheral_inputShape.dims_[1])
+  {
+    int i = StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex];
+
+    StreamPeripheral_yOffset = in_y_origin;
+
+    StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
+
+    READ_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+    {
+#pragma HLS pipeline
+      channel_in = stream_in.read ();
+      temp_0.u32 = channel_in.data;
+      temp_1.u32 = channel_in.data >> 32;
+
+      StreamPeripheral_inputBuffer[i + j + 0] = temp_0.f32;
+      StreamPeripheral_inputBuffer[i + j + 1] = temp_1.f32;
+    }
+    AXIStream_index += StreamPeripheral_rowSize;
+
+    if (StreamPeripheral_lookupIndex + 1 < StreamPeripheral_lookupLength)
+    {
+      StreamPeripheral_lookupIndex++;
+    }
+    else
+    {
+      StreamPeripheral_lookupIndex = 0;
+    }
+  }
+}
+
+inline float StreamPeripheral_read (const int in_y,
+                                    const int in_x,
+                                    const int in_channel)
+{
+  int lookupIndex;
+  int i;
+
+  if (StreamPeripheral_lookupIndex < in_y)
+  {
+    lookupIndex = in_y - StreamPeripheral_yOffset
+        + StreamPeripheral_lookupIndex;
+  }
+  else
+  {
+    lookupIndex = in_y;
+  }
+
+  if (lookupIndex > StreamPeripheral_lookupLength)
+    lookupIndex -= StreamPeripheral_lookupLength;
+
+  i = StreamPeripheral_lookupTable[lookupIndex] + StreamPeripheral_inputShape.dims_[3] * in_x
+      + in_channel;
+
+  return StreamPeripheral_inputBuffer[i];
+}
+
+inline void StreamPeripheral_output (hls::stream<StreamChannel> &stream_out,
+                              float activation_output)
+{
+  AXIStream_outputBuffer[AXIStreamOut_index % 2] = activation_output;
+  if (AXIStreamOut_index % 2 == 2 - 1)
+  {
+    Data temp_0;
+    Data temp_1;
+    temp_0.f32 = AXIStream_outputBuffer[0];
+    temp_1.f32 = AXIStream_outputBuffer[1];
+    channel_out.data = ((ap_uint<DMA_CHANNEL_WIDTH> ) temp_0.u32)
+    | (((ap_uint<DMA_CHANNEL_WIDTH> ) temp_1.u32) << 32);
+    channel_out.last = (AXIStreamOut_index + 1)
+    == AXIStreamOut_indexLast;
+    stream_out.write (channel_out);
+  }
+  AXIStreamOut_index ++;
+}
+
+
 static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                     hls::stream<StreamChannel> &stream_out,
                                     ConvProfile &  Conv_profile,
@@ -178,24 +357,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                     CustomFormat * Conv_bias,
                                     int * debug)
 {
-  ///////////////////////////////////////////////////////////////////////////////
-  static float  StreamPeripheral_inputBuffer[8064] = {0};
-  static int    StreamPeripheral_yOffset = 0;
-  static int    StreamPeripheral_lookupTable[32] = {0};
-  static int    StreamPeripheral_lookupTableRows[32] = {0};
-  static int    StreamPeripheral_lookupIndex = 0;
-  static int    StreamPeripheral_lookupLength = 0;
-  static int    StreamPeripheral_rowCount = 0;
-  static int    StreamPeripheral_rowSize = 0;
-  ///////////////////////////////////////////////////////////////////////////////
-  static int    AXIStream_index = 0;
-  static float  AXIStream_outputBuffer[2] = {0};
-  static int    AXIStreamOut_index = 0;
-  static int    AXIStreamOut_indexLast = 0;
-  ///////////////////////////////////////////////////////////////////////////////
 #if HYBRID_LOGARITHMIC
-  SignFormat        Total_sign = 0;
-  ExponentFormat    Total_exponent = 0;
   MagnitudeFormat   Total_magnitude = 0;
   ///////////////////////////////////////////////////////////////////////////////
   MagnitudeFormat   Activation_max_magnitude = 0;
@@ -244,46 +406,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   Activation_min_magnitude = Float_denormalize (output_activation_min);
 #endif
   ///////////////////////////////////////////////////////////////////////////////
-  /*Initialize ()*/
-  {
-    Data temp_0;
-    Data temp_1;
-
-    AXIStream_index = 0;
-
-    AXIStreamOut_index = 0;
-
-    AXIStreamOut_indexLast = FlatSize(output_shape);
-
-    StreamPeripheral_lookupLength = filter_height;
-
-    StreamPeripheral_lookupIndex = StreamPeripheral_lookupLength - 1;
-
-    StreamPeripheral_rowCount = 0;
-
-    StreamPeripheral_rowSize = input_width * input_depth;
-
-    INITIALIZE_INPUT_TENSOR_LINE_ROWS: for (int row = 0; row < StreamPeripheral_lookupIndex; row++)
-    {
-#pragma HLS pipeline
-      StreamPeripheral_lookupTable[row] = AXIStream_index;
-      StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
-
-      INITIALIZE_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
-      {
-#pragma HLS pipeline
-        channel_in = stream_in.read ();
-        temp_0.u32 = channel_in.data;
-        temp_1.u32 = channel_in.data >> 32;
-
-        StreamPeripheral_inputBuffer[AXIStream_index + j + 0] = temp_0.f32;
-        StreamPeripheral_inputBuffer[AXIStream_index + j + 1] = temp_1.f32;
-      }
-      AXIStream_index += StreamPeripheral_rowSize;
-    }
-
-    StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex] = AXIStream_index;
-  }
+  StreamPeripheral_initialize (stream_in, input_shape, filter_shape, output_shape);
 
   CONV_OUTPUT_BATCH: for (int batch = 0; batch < batches; ++batch)
   {
@@ -293,41 +416,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
 #pragma HLS pipeline
       const int in_y_origin = (out_y * stride_height) - pad_height;
 
-      /*pushRow()*/
-      {
-        Data temp_0;
-        Data temp_1;
-
-        if (0 <= in_y_origin && StreamPeripheral_rowCount < input_height)
-        {
-          int i = StreamPeripheral_lookupTable[StreamPeripheral_lookupIndex];
-
-          StreamPeripheral_yOffset = in_y_origin;
-
-          StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
-
-          READ_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
-          {
-#pragma HLS pipeline
-            channel_in = stream_in.read ();
-            temp_0.u32 = channel_in.data;
-            temp_1.u32 = channel_in.data >> 32;
-
-            StreamPeripheral_inputBuffer[i + j + 0] = temp_0.f32;
-            StreamPeripheral_inputBuffer[i + j + 1] = temp_1.f32;
-          }
-          AXIStream_index += StreamPeripheral_rowSize;
-
-          if (StreamPeripheral_lookupIndex + 1 < StreamPeripheral_lookupLength)
-          {
-            StreamPeripheral_lookupIndex++;
-          }
-          else
-          {
-            StreamPeripheral_lookupIndex = 0;
-          }
-        }
-      }
+      StreamPeripheral_pushRowBuffer(stream_in, in_y_origin);
 
       CONV_OUTPUT_COL: for (int out_x = 0; out_x < output_width; ++out_x)
       {
@@ -363,27 +452,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
               {
 #pragma HLS pipeline
                 float input_value;
-                /*read()*/
-                {
-                  int lookupIndex;
-                  int i;
-
-                  if (StreamPeripheral_lookupIndex < in_y)
-                  {
-                    lookupIndex = in_y - StreamPeripheral_yOffset + StreamPeripheral_lookupIndex;
-                  }
-                  else
-                  {
-                    lookupIndex = in_y;
-                  }
-
-                  if (lookupIndex > StreamPeripheral_lookupLength)
-                    lookupIndex -= StreamPeripheral_lookupLength;
-
-                  i = StreamPeripheral_lookupTable[lookupIndex] + input_shape->dims_[3]*in_x + in_channel;
-
-                  input_value = StreamPeripheral_inputBuffer[i];
-                }
+                input_value = StreamPeripheral_read (in_y, in_x, in_channel);
 
                 CustomFormat filter_value = Conv_filter[Offset (filter_shape,
                                                          out_channel, filter_y,
@@ -407,29 +476,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                                             Activation_min_magnitude,
                                                             Activation_max_magnitude);
 
-          if (Total_magnitude != 0)
-          {
-            Total_sign = Total_magnitude < 0;
-            if (Total_sign)
-            {
-              Total_magnitude = ~Total_magnitude + 1;
-            }
-
-            TOTAL_NORMALIZATION_LOOP: for (Total_exponent = 0; !(0x80000000000000 & Total_magnitude); Total_exponent++)
-            { // Normalize
-#pragma HLS pipeline
-              Total_magnitude <<= 1;
-            }
-
-            Total_exponent -= 32;
-            Total_magnitude >>= 32;
-
-            *(uint32_t*) (&activation_output) = BUILD_FLOAT(Total_sign, -Total_exponent, Total_magnitude);
-          }
-          else
-          {
-            *(uint32_t*) (&activation_output) = 0;
-          }
+          activation_output = Float_normalize (Total_magnitude);
 #else
           float bias_value = 0.0f;
           if (bias_data_enable)
@@ -443,23 +490,7 @@ static int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                                             output_activation_max);
 #endif
 
-          /*out()*/
-          {
-            AXIStream_outputBuffer[AXIStreamOut_index % 2] = activation_output;
-            if (AXIStreamOut_index % 2 == 2 - 1)
-            {
-              Data temp_0;
-              Data temp_1;
-              temp_0.f32 = AXIStream_outputBuffer[0];
-              temp_1.f32 = AXIStream_outputBuffer[1];
-              channel_out.data = ((ap_uint<DMA_CHANNEL_WIDTH> ) temp_0.u32)
-                  | (((ap_uint<DMA_CHANNEL_WIDTH> ) temp_1.u32) << 32);
-              channel_out.last = (AXIStreamOut_index + 1)
-                  == AXIStreamOut_indexLast;
-              stream_out.write (channel_out);
-            }
-            AXIStreamOut_index ++;
-          }
+          StreamPeripheral_output (stream_out, activation_output);
         }
       }
     }
