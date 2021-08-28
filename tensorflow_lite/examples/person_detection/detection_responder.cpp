@@ -1054,13 +1054,13 @@ void RespondToDetection (tflite::ErrorReporter* error_reporter,
     }
   }
 
-  sprintf (message, "%f [%s]", output->data.f[index[0]], ImageNetLabel (index[0]));
+  sprintf (message, "%f [%s]", output->data.f[index[0]], CifarClassLabels [index[0]]);
   TF_LITE_REPORT_ERROR(error_reporter, message);
 
-  sprintf (message, "%f [%s]", output->data.f[index[1]], ImageNetLabel (index[1]));
+  sprintf (message, "%f [%s]", output->data.f[index[1]], CifarClassLabels [index[1]]);
   TF_LITE_REPORT_ERROR(error_reporter, message);
 
-  sprintf (message, "%f [%s]", output->data.f[index[2]], ImageNetLabel (index[2]));
+  sprintf (message, "%f [%s]", output->data.f[index[2]], CifarClassLabels [index[2]]);
   TF_LITE_REPORT_ERROR(error_reporter, message);
 
 //  TF_LITE_REPORT_ERROR(error_reporter, "Classification: %s (%s)\n",

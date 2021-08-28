@@ -10,12 +10,11 @@
 
 #include "conv_vtbl.h"
 #include "dma_vtbl.h"
-#include "conv_hls.h"
 #include "memory_manager.h"
 #include "miscellaneous.h"
 #include "custom_float.h"
 
-void Buffer_print (void * data, size_t size, char* name)
+void Buffer_print (const void * data, size_t size, const char* name)
 {
   printf ("unsigned int %s [] = {", name);
   for (int i = 0, c = 0; i < size/sizeof(unsigned int); i ++)
@@ -200,103 +199,16 @@ int ConvFpgaDelegate::initialize()
   return ProcessingUnit::initialize (&profile);
 }
 
-ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::ConvParams& params,
-                             const tflite::RuntimeShape& input_shape,
-                             const float* input_data,
-                             const tflite::RuntimeShape& filter_shape,
-                             const float* filter_data,
-                             const tflite::RuntimeShape& bias_shape,
-                             const float* bias_data,
-                             const tflite::RuntimeShape& output_shape,
-                             float* output_data,
-                             const tflite::RuntimeShape& im2col_shape,
-                             float* im2col_data,
-                             Event * parent)
+void histogram (const tflite::ConvParams& params,
+               const tflite::RuntimeShape& input_shape,
+               const float* input_data,
+               const tflite::RuntimeShape& filter_shape,
+               const float* filter_data,
+               const tflite::RuntimeShape& bias_shape,
+               const float* bias_data,
+               const tflite::RuntimeShape& output_shape,
+               float* output_data)
 {
-  NodeProfile nodeSettings = { 0 };
-  size_t txBufferSize = 0;
-  void * txBufferPtr = nullptr;
-  ConvProfile * conv_profile = nullptr;
-  float * filter = nullptr;
-  float * bias = nullptr;
-
-  TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
-  TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
-  TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
-
-  if (bias_data)
-  {
-    const int output_depth = MatchingDim (filter_shape, 0, output_shape, 3);
-    TFLITE_DCHECK_EQ(bias_shape.FlatSize (), output_depth);
-  }
-
-  txBufferSize = sizeof(ConvProfile) + (filter_shape.FlatSize () + bias_shape.FlatSize ()) * sizeof(float);
-
-  txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
-  memset (txBufferPtr, 0, txBufferSize);
-  Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, txBufferSize);
-
-  nodeSettings.setup.mode = CONV_LOAD_PROFILE_PACKAGE;
-  nodeSettings.setup.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
-  nodeSettings.setup.txBufferPtr = txBufferPtr;
-  nodeSettings.setup.txBufferSize = txBufferSize;
-  nodeSettings.setup.rxBufferPtr = nullptr;
-  nodeSettings.setup.rxBufferSize = 0;
-
-  conv_profile = (ConvProfile *) txBufferPtr;
-  filter = (float *) &conv_profile[1];
-  bias = &filter[filter_shape.FlatSize ()];
-
-  conv_profile->parameters_.stride_.height_ = params.stride_height;
-  conv_profile->parameters_.stride_.width_ = params.stride_width;
-
-  conv_profile->parameters_.dilation_.height_ = params.dilation_height_factor;
-  conv_profile->parameters_.dilation_.width_ = params.dilation_width_factor;
-
-  conv_profile->parameters_.padding_.height_ = params.padding_values.height;
-  conv_profile->parameters_.padding_.width_ = params.padding_values.width;
-
-  conv_profile->parameters_.activation_.max_ = params.float_activation_max;
-  conv_profile->parameters_.activation_.min_ = params.float_activation_min;
-
-  conv_profile->input_shape_.dims_[0] = input_shape.Dims (0);
-  conv_profile->input_shape_.dims_[1] = input_shape.Dims (1);
-  conv_profile->input_shape_.dims_[2] = input_shape.Dims (2);
-  conv_profile->input_shape_.dims_[3] = input_shape.Dims (3);
-
-  conv_profile->filter_shape_.dims_[0] = filter_shape.Dims (0);
-  conv_profile->filter_shape_.dims_[1] = filter_shape.Dims (1);
-  conv_profile->filter_shape_.dims_[2] = filter_shape.Dims (2);
-  conv_profile->filter_shape_.dims_[3] = filter_shape.Dims (3);
-
-  conv_profile->bias_shape_.dims_[0] = bias_shape.Dims (0);
-  conv_profile->bias_shape_.dims_[1] = 1;
-  conv_profile->bias_shape_.dims_[2] = 1;
-  conv_profile->bias_shape_.dims_[3] = 1;
-
-  conv_profile->output_shape_.dims_[0] = output_shape.Dims (0);
-  conv_profile->output_shape_.dims_[1] = output_shape.Dims (1);
-  conv_profile->output_shape_.dims_[2] = output_shape.Dims (2);
-  conv_profile->output_shape_.dims_[3] = output_shape.Dims (3);
-
-  memcpy (filter,
-          filter_data,
-          filter_shape.FlatSize () * sizeof(float));
-
-  memcpy (bias,
-          bias_data,
-          bias_shape.FlatSize () * sizeof(float));
-
-  nodeSettings.compute.mode = CONV_EXECUTION;
-  nodeSettings.compute.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
-  nodeSettings.compute.txBufferPtr = (void *) input_data;
-  nodeSettings.compute.txBufferSize = input_shape.FlatSize() * sizeof(float);
-  nodeSettings.compute.rxBufferPtr = (void *) output_data;
-  nodeSettings.compute.rxBufferSize = output_shape.FlatSize() * sizeof(float);
-
-  nodeSettings.event = Event_new (parent, EVENT_HARDWARE, (void *) "CONV_HW");
-
-  /////////////////////////////////////////////////////////
   static int filter_max = 0;
   static int inputbuffer_max = 0;
   static int bias_max = 0;
@@ -337,16 +249,189 @@ ConvFpgaDelegate::NodeProfile ConvFpgaDelegate::GenNodeProfile (const tflite::Co
     inputbuffer_max = filter_shape.Dims (1) * input_shape.Dims (2) * input_shape.Dims (3);
 
   printf ("Filter max size = %d, Bias max size = %d, Input buffer max size = %d \n", filter_max, bias_max, inputbuffer_max);
-
-  return nodeSettings;
 }
 
-int ConvFpgaDelegate::execute(NodeProfile * profile)
+ConvFpgaDelegate::Task ConvFpgaDelegate::createTask (const tflite::ConvParams& params,
+                             const tflite::RuntimeShape& input_shape,
+                             const float* input_data,
+                             const tflite::RuntimeShape& filter_shape,
+                             const float* filter_data,
+                             const tflite::RuntimeShape& bias_shape,
+                             const float* bias_data,
+                             const tflite::RuntimeShape& output_shape,
+                             float* output_data,
+                             Event * parent)
+{
+  ConvProfile conv_profile = { 0 };
+
+  conv_profile.parameters_.stride_.height_ = params.stride_height;
+  conv_profile.parameters_.stride_.width_ = params.stride_width;
+
+  conv_profile.parameters_.dilation_.height_ = params.dilation_height_factor;
+  conv_profile.parameters_.dilation_.width_ = params.dilation_width_factor;
+
+  conv_profile.parameters_.padding_.height_ = params.padding_values.height;
+  conv_profile.parameters_.padding_.width_ = params.padding_values.width;
+
+  conv_profile.parameters_.activation_.max_ = params.float_activation_max;
+  conv_profile.parameters_.activation_.min_ = params.float_activation_min;
+
+  conv_profile.parameters_.depth_multiplier_ = 0;
+  conv_profile.parameters_.type_ = CONV_2D;
+
+  TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
+
+  for (int i = 0; i < 4; i++)
+  {
+    conv_profile.input_shape_.dims_[i] = input_shape.Dims (i);
+    conv_profile.filter_shape_.dims_[i] = filter_shape.Dims (i);
+    conv_profile.output_shape_.dims_[i] = output_shape.Dims (i);
+  }
+
+  TFLITE_DCHECK_EQ(bias_shape.DimensionsCount (), 1);
+  conv_profile.bias_shape_.dims_[0] = bias_shape.Dims (0);
+  conv_profile.bias_shape_.dims_[1] = 1;
+  conv_profile.bias_shape_.dims_[2] = 1;
+  conv_profile.bias_shape_.dims_[3] = 1;
+
+  return createTask (conv_profile, input_data, filter_data, bias_data, output_data, parent);
+}
+
+ConvFpgaDelegate::Task ConvFpgaDelegate::createTask (const tflite::DepthwiseParams& params,
+                             const tflite::RuntimeShape& input_shape,
+                             const float* input_data,
+                             const tflite::RuntimeShape& filter_shape,
+                             const float* filter_data,
+                             const tflite::RuntimeShape& bias_shape,
+                             const float* bias_data,
+                             const tflite::RuntimeShape& output_shape,
+                             float* output_data,
+                             Event * parent)
+{
+  ConvProfile conv_profile = { 0 };
+
+  conv_profile.parameters_.stride_.height_ = params.stride_height;
+  conv_profile.parameters_.stride_.width_ = params.stride_width;
+
+  conv_profile.parameters_.dilation_.height_ = params.dilation_height_factor;
+  conv_profile.parameters_.dilation_.width_ = params.dilation_width_factor;
+
+  conv_profile.parameters_.padding_.height_ = params.padding_values.height;
+  conv_profile.parameters_.padding_.width_ = params.padding_values.width;
+
+  conv_profile.parameters_.activation_.max_ = params.float_activation_max;
+  conv_profile.parameters_.activation_.min_ = params.float_activation_min;
+
+  conv_profile.parameters_.depth_multiplier_ = params.depth_multiplier;
+  conv_profile.parameters_.type_ = DEPTHWISE_CONV_2D;
+
+  TFLITE_DCHECK_EQ(input_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(filter_shape.DimensionsCount (), 4);
+  TFLITE_DCHECK_EQ(output_shape.DimensionsCount (), 4);
+
+  for (int i = 0; i < 4; i++)
+  {
+    conv_profile.input_shape_.dims_[i] = input_shape.Dims (i);
+    conv_profile.filter_shape_.dims_[i] = filter_shape.Dims (i);
+    conv_profile.output_shape_.dims_[i] = output_shape.Dims (i);
+  }
+
+  TFLITE_DCHECK_EQ(bias_shape.DimensionsCount (), 1);
+  conv_profile.bias_shape_.dims_[0] = bias_shape.Dims (0);
+  conv_profile.bias_shape_.dims_[1] = 1;
+  conv_profile.bias_shape_.dims_[2] = 1;
+  conv_profile.bias_shape_.dims_[3] = 1;
+
+  return createTask (conv_profile, input_data, filter_data, bias_data, output_data, parent);
+}
+
+ConvFpgaDelegate::Task ConvFpgaDelegate::createTask (const ConvProfile& profile,
+                                                     const float* input_data,
+                                                     const float* filter_data,
+                                                     const float* bias_data,
+                                                     float* output_data,
+                                                     Event * parent)
+{
+  Task task = { 0 };
+
+  ConvProfile * conv_profile = nullptr;
+  float * filter = nullptr;
+  float * bias = nullptr;
+
+  size_t input_size = sizeof(float)
+                      * profile.input_shape_.dims_[0]
+                      * profile.input_shape_.dims_[1]
+                      * profile.input_shape_.dims_[2]
+                      * profile.input_shape_.dims_[3];
+
+  size_t filter_size = sizeof(float)
+                      * profile.filter_shape_.dims_[0]
+                      * profile.filter_shape_.dims_[1]
+                      * profile.filter_shape_.dims_[2]
+                      * profile.filter_shape_.dims_[3];
+
+  size_t bias_size = sizeof(float)
+                    * profile.bias_shape_.dims_[0]
+                    * profile.bias_shape_.dims_[1]
+                    * profile.bias_shape_.dims_[2]
+                    * profile.bias_shape_.dims_[3];
+
+  size_t output_size = sizeof(float)
+                      * profile.output_shape_.dims_[0]
+                      * profile.output_shape_.dims_[1]
+                      * profile.output_shape_.dims_[2]
+                      * profile.output_shape_.dims_[3];
+
+  size_t txBufferSize = sizeof(ConvProfile) + filter_size + bias_size;
+
+  void * txBufferPtr = MemoryBlock_alloc (&profile_->ddrMem, txBufferSize);
+  memset (txBufferPtr, 0, txBufferSize);
+  Xil_DCacheFlushRange ((UINTPTR) txBufferPtr, txBufferSize);
+
+  task.setup.mode = CONV_SETUP;
+  task.setup.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
+  task.setup.txBufferPtr = txBufferPtr;
+  task.setup.txBufferSize = txBufferSize;
+  task.setup.rxBufferPtr = nullptr;
+  task.setup.rxBufferSize = 0;
+
+  conv_profile = (ConvProfile *) txBufferPtr;
+  filter = (float *) &conv_profile[1];
+  bias = &filter[filter_size / sizeof(float)];
+
+  memcpy (conv_profile, &profile, sizeof(ConvProfile));
+  memcpy (filter, filter_data, filter_size);
+  memcpy (bias, bias_data, bias_size);
+
+  task.compute.mode = CONV_EXECUTION;
+  task.compute.flags = BLOCKING_IN_OUT | RX_CACHE_FETCH | TX_CACHE_FUSH;
+  task.compute.txBufferPtr = (void *) input_data;
+  task.compute.txBufferSize = input_size;
+  task.compute.rxBufferPtr = (void *) output_data;
+  task.compute.rxBufferSize = output_size;
+
+  task.event = Event_new (parent, EVENT_HARDWARE, (void *) "CONV_HW");
+
+  return task;
+}
+
+inline bool ConvFpgaDelegate::isValid(Task * profile)
+{
+  return (profile != nullptr)
+      && (((0 < profile->setup.txBufferSize)
+          && (profile->setup.txBufferPtr != nullptr))
+          || ((0 < profile->setup.rxBufferSize)
+              && (profile->setup.rxBufferPtr != nullptr)));
+}
+
+int ConvFpgaDelegate::execute(Task * profile)
 {
   int status = XST_FAILURE;
   ASSERT(profile != nullptr);
 
-  if (profile != nullptr)
+  if (isValid (profile))
   {
     status = ProcessingUnit::execute(&profile->setup);
     ASSERT(status == XST_SUCCESS);
@@ -561,7 +646,7 @@ inline void DotProduct_logarithmic (int64_t & Total_magnitude,
   Total_magnitude += p_magnitude;
 }
 
-void ConvFpgaDelegate::ConvInternal (NodeProfile * profile)
+void ConvFpgaDelegate::ConvInternal (Task * profile)
 {
   Transaction * setup = &profile->setup;
   Transaction * compute = &profile->compute;

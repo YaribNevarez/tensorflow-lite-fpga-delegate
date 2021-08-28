@@ -20,6 +20,6 @@ tflite_model = converter.convert()
 with open('vgg16.tflite', 'wb') as f:
   f.write(tflite_model)
 
-os.system("xxd -i vgg16.tflite > vgg16.tflite.cpp")
+#os.system("xxd -i vgg16.tflite > vgg16.tflite.cpp")
 
 print("Done!")

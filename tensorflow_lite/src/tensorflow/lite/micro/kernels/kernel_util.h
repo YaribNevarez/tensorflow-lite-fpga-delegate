@@ -80,6 +80,8 @@ TfLiteStatus CreateWritableTensorDimsWithCopy(TfLiteContext* context,
                                               TfLiteTensor* tensor,
                                               TfLiteEvalTensor* eval_tensor);
 
+void* GetDelegate (const TfLiteContext* context);
+
 }  // namespace micro
 }  // namespace tflite
 

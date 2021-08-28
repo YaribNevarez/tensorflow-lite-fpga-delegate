@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_profiler.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/schema/schema_utils.h"
+#include "conv_delegate.h"
 
 namespace tflite {
 
@@ -76,7 +77,12 @@ MicroInterpreter::~MicroInterpreter() {
 
   if (event_ != nullptr)
   {
-    Event_delete (&event_);
+    Event_delete (reinterpret_cast<Event**> (&event_));
+  }
+
+  if (delegate_ != nullptr)
+  {
+    delete reinterpret_cast<ConvFpgaDelegate*> (delegate_);
   }
 }
 
@@ -84,10 +90,11 @@ void MicroInterpreter::Init(MicroProfiler* profiler) {
   context_.impl_ = static_cast<void*>(this);
   context_.ReportError = ReportOpError;
   context_.GetTensor = GetTensor;
-  context_.ReportError = ReportOpError;
-  context_.GetTensor = GetTensor;
+  context_.ReportError = ReportOpError; // Why is this repeated?
+  context_.GetTensor = GetTensor;       //
   context_.GetEvalTensor = GetEvalTensor;
   context_.profiler = profiler;
+  context_.GetDelegate = GetDelegate;
 
   initialization_status_ = kTfLiteOk;
 }
@@ -291,11 +298,11 @@ TfLiteStatus MicroInterpreter::Invoke() {
     TF_LITE_ENSURE_OK(&context_, AllocateTensors());
   }
 
-  Event_start (event_);
+  Event_start (reinterpret_cast<Event*> (event_));
 
   rc = graph_.InvokeSubgraph(0);
 
-  Event_stop (event_);
+  Event_stop (reinterpret_cast<Event*> (event_));
 
   return rc;
 }
@@ -387,9 +394,29 @@ TfLiteStatus MicroInterpreter::GetGraph(struct TfLiteContext* context,
   return kTfLiteOk;
 }
 
+void * MicroInterpreter::GetDelegate (const struct TfLiteContext* context)
+{
+  MicroInterpreter* interpreter = reinterpret_cast<MicroInterpreter*> (context->impl_);
+  return interpreter->delegate_;
+}
+
+void MicroInterpreter::enable_delegate(bool enable)
+{
+  if (enable)
+  {
+    delegate_ = new ConvFpgaDelegate ();
+    TFLITE_DCHECK(delegate_ != nullptr);
+    if (delegate_)
+    {
+      int result = reinterpret_cast<ConvFpgaDelegate*> (delegate_)->initialize ();
+      TFLITE_DCHECK(result == XST_SUCCESS);
+    }
+  }
+}
+
 std::string MicroInterpreter::get_eventLog(void)
 {
-  Event_print (event_);
+  Event_print (reinterpret_cast<Event*> (event_));
 
   return "";
 }

@@ -20,6 +20,6 @@ tflite_model = converter.convert()
 with open('inception.tflite', 'wb') as f:
   f.write(tflite_model)
 
-os.system("xxd -i inception.tflite > inception.tflite.cpp")
+#os.system("xxd -i inception.tflite > inception.tflite.cpp")
 
 print("Done!")

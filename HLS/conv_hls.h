@@ -5,13 +5,7 @@
 
 typedef enum
 {
-  CONV_LOAD_PROFILE_PACKAGE,
-  CONV_LOAD_PROFILE,
-  CONV_FETCH_PROFILE,
-  CONV_LOAD_FILTER,
-  CONV_FETCH_FILTER,
-  CONV_LOAD_BIAS,
-  CONV_FETCH_BIAS,
+  CONV_SETUP,
   CONV_EXECUTION
 } ConvExecutionMode;
 
@@ -57,12 +51,20 @@ typedef struct
   float min_;
 } ConvActivation;
 
+typedef enum
+{
+  CONV_2D,
+  DEPTHWISE_CONV_2D
+} OperatorType;
+
 typedef struct
 {
   ConvStride      stride_;
   ConvDilation    dilation_;
   ConvPadding     padding_;
   ConvActivation  activation_;
+  int             depth_multiplier_;
+  OperatorType    type_;
 } ConvParameters;
 
 

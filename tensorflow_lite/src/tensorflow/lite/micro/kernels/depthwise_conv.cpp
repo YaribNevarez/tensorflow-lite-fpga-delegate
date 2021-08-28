@@ -26,13 +26,14 @@ limitations under the License.
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/padding.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
+#include "conv_delegate.h"
 
 namespace tflite {
 namespace {
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
-  return context->AllocatePersistentBuffer(context, sizeof(OpDataConv));
+  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(ConvFpgaDelegate::Task));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -54,18 +55,43 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
           ? tflite::micro::GetEvalInput(context, node, kDepthwiseConvBiasTensor)
           : nullptr;
 
+  ConvFpgaDelegate * delegate = reinterpret_cast<ConvFpgaDelegate *> (tflite::micro::GetDelegate (context));
+
+  ConvFpgaDelegate::Task & task = *(reinterpret_cast<ConvFpgaDelegate::Task*>(node->user_data + sizeof(OpDataConv)));
+
+  if ((delegate != nullptr) && !ConvFpgaDelegate::isValid (&task))
+  {
+    task = delegate->createTask(DepthwiseConvParamsFloat (params, data),
+        tflite::micro::GetTensorShape (input),
+        tflite::micro::GetTensorData<float> (input),
+        tflite::micro::GetTensorShape (filter),
+        tflite::micro::GetTensorData<float> (filter),
+        tflite::micro::GetTensorShape (bias),
+        tflite::micro::GetTensorData<float> (bias),
+        tflite::micro::GetTensorShape (output),
+        tflite::micro::GetTensorData<float> (output),
+        reinterpret_cast<Event *> (node->delegate));
+  }
+
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-      tflite::reference_ops::DepthwiseConv(
-          DepthwiseConvParamsFloat(params, data),
-          tflite::micro::GetTensorShape(input),
-          tflite::micro::GetTensorData<float>(input),
-          tflite::micro::GetTensorShape(filter),
-          tflite::micro::GetTensorData<float>(filter),
-          tflite::micro::GetTensorShape(bias),
-          tflite::micro::GetTensorData<float>(bias),
-          tflite::micro::GetTensorShape(output),
-          tflite::micro::GetTensorData<float>(output));
+      if (delegate != nullptr)
+      {
+        delegate->execute (&task);
+      }
+      else
+      {
+        tflite::reference_ops::DepthwiseConv(
+            DepthwiseConvParamsFloat(params, data),
+            tflite::micro::GetTensorShape(input),
+            tflite::micro::GetTensorData<float>(input),
+            tflite::micro::GetTensorShape(filter),
+            tflite::micro::GetTensorData<float>(filter),
+            tflite::micro::GetTensorShape(bias),
+            tflite::micro::GetTensorData<float>(bias),
+            tflite::micro::GetTensorShape(output),
+            tflite::micro::GetTensorData<float>(output));
+      }
       break;
     }
     case kTfLiteInt8: {

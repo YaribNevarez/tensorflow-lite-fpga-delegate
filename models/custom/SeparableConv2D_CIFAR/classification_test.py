@@ -10,9 +10,12 @@ from tensorflow.keras.applications.resnet50 import preprocess_input, decode_pred
 import matplotlib.pyplot as plt
 import numpy as np
 
+class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+               'dog', 'frog', 'horse', 'ship', 'truck']
+
 
 # Load TFLite model and allocate tensors.
-interpreter = tf.lite.Interpreter(model_path="mobilenetv2.tflite")
+interpreter = tf.lite.Interpreter(model_path="sconv.tflite")
 interpreter.allocate_tensors()
 
 # Get input and output tensors.
@@ -20,23 +23,24 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 
-img_path = 'cat.jpg'
-img = image.load_img(img_path, target_size=(224, 224))
+img_path = 'dog.jpg'
+img = image.load_img(img_path, target_size=(32, 32))
 x = image.img_to_array(img)
 x = np.expand_dims(x, axis=0)
-x = tf.keras.applications.mobilenet.preprocess_input(x)
+x = x.astype('float32')
+x = x / 255.0
 
-x.tofile('cat.dat')
+x.tofile('dog.dat')
 
 interpreter.set_tensor(input_details[0]['index'], x)
 interpreter.invoke()
 output_data = interpreter.get_tensor(output_details[0]['index'])
-print('TensorFlow Lite Predicted:', decode_predictions(output_data, top=3)[0])
+print('TensorFlow Lite Predicted:', output_data)
 
-model = load_model('mobilenetv2.h5')
+model = load_model('sconv.h5')
 
 output_data = model.predict(x)
 
-print('TensorFlow Predicted:', decode_predictions(output_data, top=3)[0])
+print('TensorFlow Predicted:', output_data)
 
 print("Done!")

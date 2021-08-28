@@ -36,6 +36,6 @@ tflite_model = converter.convert()
 with open('cifar_cnn.tflite', 'wb') as f:
   f.write(tflite_model)
 
-os.system("xxd -i cifar_cnn.tflite > cifar_cnn.tflite.cpp")
+#os.system("xxd -i cifar_cnn.tflite > cifar_cnn.tflite.cpp")
 
 print("Done!")

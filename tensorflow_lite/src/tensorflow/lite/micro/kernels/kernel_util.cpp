@@ -73,5 +73,11 @@ TfLiteStatus CreateWritableTensorDimsWithCopy(TfLiteContext* context,
   return kTfLiteOk;
 }
 
+void * GetDelegate (const TfLiteContext* context)
+{
+  TFLITE_DCHECK(context != nullptr);
+  return context->GetDelegate (context);
+}
+
 }  // namespace micro
 }  // namespace tflite

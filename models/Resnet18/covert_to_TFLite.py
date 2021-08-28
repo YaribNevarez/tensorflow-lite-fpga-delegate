@@ -20,6 +20,6 @@ tflite_model = converter.convert()
 with open('resnet18.tflite', 'wb') as f:
   f.write(tflite_model)
 
-os.system("xxd -i resnet18.tflite > resnet18.tflite.cpp")
+#os.system("xxd -i resnet18.tflite > resnet18.tflite.cpp")
 
 print("Done!")

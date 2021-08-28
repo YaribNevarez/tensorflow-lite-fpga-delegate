@@ -20,6 +20,6 @@ tflite_model = converter.convert()
 with open('mobilenetv2.tflite', 'wb') as f:
   f.write(tflite_model)
 
-os.system("xxd -i mobilenetv2.tflite > mobilenetv2.tflite.cpp")
+#os.system("xxd -i mobilenetv2.tflite > mobilenetv2.tflite.cpp")
 
 print("Done!")

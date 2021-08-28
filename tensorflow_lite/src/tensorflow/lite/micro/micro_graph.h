@@ -19,7 +19,6 @@ limitations under the License.
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/micro/micro_allocator.h"
 #include "tensorflow/lite/schema/schema_generated.h"
-#include "event.h"
 
 namespace tflite {
 
@@ -82,7 +81,7 @@ class MicroGraph {
   // for all per-subgraph allocation data.
   SubgraphAllocations* GetAllocations() { return subgraph_allocations_; }
 
-  void AllocateEventLogger (Event * parent, int subgraph_idx);
+  void AllocateEventLogger (void * parent, int subgraph_idx);
 
   void DisposeEventLogger(void);
 
@@ -94,7 +93,7 @@ class MicroGraph {
   int current_subgraph_index_;
   const flatbuffers::Vector<flatbuffers::Offset<SubGraph>>* subgraphs_;
 
-  Event ** event_array_ = nullptr;
+  void ** event_array_ = nullptr;
   size_t event_array_len_ = 0;
 
   TF_LITE_REMOVE_VIRTUAL_DELETE

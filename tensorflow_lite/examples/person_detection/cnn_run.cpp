@@ -81,8 +81,29 @@ static FRESULT File_readData (const char * file_name, void * model, size_t model
   return rc;
 }
 
+static FRESULT File_writeData (const char * file_name, const void * data, size_t size)
+{
+  FIL fil; /* File object */
+  FRESULT rc;
+  size_t result = 0;
 
-unsigned char model_data[13988516];
+  rc = f_open (&fil, file_name, FA_WRITE | FA_CREATE_NEW);
+  ASSERT(rc == FR_OK);
+  if (rc == FR_OK)
+  {
+    rc = f_write (&fil, data, size, &result);
+    ASSERT(rc == FR_OK);
+    ASSERT(size == result);
+
+    rc = f_close (&fil);
+    ASSERT(rc == FR_OK);
+  }
+
+  return rc;
+}
+
+
+unsigned char model_data[1429892];
 
 // The name of this function is important for Arduino compatibility.
 void setup ()
@@ -93,7 +114,7 @@ void setup ()
   rc = File_initializeSD ();
   ASSERT(rc == FR_OK);
 
-  rc = File_readData ("cifar", model_data, 13988516);
+  rc = File_readData ("sconv", model_data, 1429892);
   ASSERT(rc == FR_OK);
 
   // Set up logging. Google style is to avoid globals or statics because of
@@ -105,6 +126,7 @@ void setup ()
   // Map the model into a usable data structure. This doesn't involve any
   // copying or parsing, it's a very lightweight operation.
   model = tflite::GetModel (model_data);
+
   if (model->version () != TFLITE_SCHEMA_VERSION)
   {
     TF_LITE_REPORT_ERROR(error_reporter,
@@ -131,6 +153,8 @@ void setup ()
     TF_LITE_REPORT_ERROR(error_reporter, "AllocateTensors() failed");
     return;
   }
+
+  interpreter->enable_delegate(true);
 
   // Get information about the memory area to use for the model's input.
   input = interpreter->input (0);
@@ -170,14 +194,7 @@ void loop ()
     image_index = 0;
   }
 
-//  status = GetImage (error_reporter,
-//                     image_index,
-//                     input->dims->data[1],
-//                     input->dims->data[2],
-//                     input->dims->data[3],
-//                     input->data.f);
-
-  rc = File_readData ("dog32x32", input->data.data, 12288);
+  rc = File_readData ("dog", input->data.data, 12288);
   ASSERT(rc == FR_OK);
 
   if (status != kTfLiteOk)

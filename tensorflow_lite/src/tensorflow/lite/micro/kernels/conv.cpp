@@ -30,26 +30,9 @@ limitations under the License.
 namespace tflite {
 namespace {
 
-static ConvFpgaDelegate * delegate_ = nullptr;
-
-typedef struct
-{
-  int valid;
-  ConvFpgaDelegate::NodeProfile profile;
-} DelegateProfile;
-
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
-
-  if (delegate_ == nullptr)
-  {
-    delegate_ = new ConvFpgaDelegate();
-    TFLITE_DCHECK(delegate_ != nullptr);
-    if (delegate_)
-      TFLITE_DCHECK(0 == delegate_->initialize());
-  }
-
-  return context->AllocatePersistentBuffer(context, sizeof(OpDataConv) + sizeof(DelegateProfile));
+  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(ConvFpgaDelegate::Task));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -70,11 +53,13 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TFLITE_DCHECK(node->user_data != nullptr);
   const auto& data = *(static_cast<const OpDataConv*>(node->user_data));
 
-  DelegateProfile & delegate_profile = *(static_cast<DelegateProfile*>(node->user_data + sizeof(OpDataConv)));
+  ConvFpgaDelegate * delegate = reinterpret_cast<ConvFpgaDelegate *> (tflite::micro::GetDelegate (context));
 
-  if ((delegate_ != nullptr) && !delegate_profile.valid)
+  ConvFpgaDelegate::Task & task = *(reinterpret_cast<ConvFpgaDelegate::Task*>(node->user_data + sizeof(OpDataConv)));
+
+  if ((delegate != nullptr) && !ConvFpgaDelegate::isValid (&task))
   {
-    delegate_profile.profile = delegate_->GenNodeProfile(ConvParamsFloat (params, data),
+    task = delegate->createTask(ConvParamsFloat (params, data),
         tflite::micro::GetTensorShape (input),
         tflite::micro::GetTensorData<float> (input),
         tflite::micro::GetTensorShape (filter),
@@ -83,9 +68,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
         tflite::micro::GetTensorData<float> (bias),
         tflite::micro::GetTensorShape (output),
         tflite::micro::GetTensorData<float> (output),
-        tflite::micro::GetTensorShape (nullptr), nullptr,
-        (Event *)node->delegate);
-    delegate_profile.valid = 1;
+        reinterpret_cast<Event *> (node->delegate));
   }
 
   TF_LITE_ENSURE_EQ(context, input->type, output->type);
@@ -94,9 +77,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32: {
-      if (delegate_ != nullptr)
+      if (delegate != nullptr)
       {
-        delegate_->execute (&delegate_profile.profile);
+        delegate->execute (&task);
       }
       else
       {

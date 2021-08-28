@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_error_reporter.h"
 #include "tensorflow/lite/micro/micro_profiler.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+#include "event.h"
 
 namespace tflite {
 namespace {
@@ -173,12 +174,12 @@ TfLiteStatus MicroGraph::InvokeSubgraph(int subgraph_idx) {
         reinterpret_cast<MicroProfiler*>(context_->profiler));
 #endif
 
-    Event_start (event_array_[i]);
+    Event_start (reinterpret_cast<Event*> (event_array_[i]));
 
     TFLITE_DCHECK(registration->invoke);
     TfLiteStatus invoke_status = registration->invoke(context_, node);
 
-    Event_stop (event_array_[i]);
+    Event_stop (reinterpret_cast<Event*> (event_array_[i]));
 
     // All TfLiteTensor structs used in the kernel are allocated from temp
     // memory in the allocator. This creates a chain of allocations in the
@@ -251,7 +252,7 @@ TfLiteEvalTensor* MicroGraph::GetSubgraphOutput(int subgraph_idx,
   return &subgraph_allocations_[subgraph_idx].tensors[tensor_idx];
 }
 
-void MicroGraph::AllocateEventLogger (Event * parent, int subgraph_idx)
+void MicroGraph::AllocateEventLogger (void * parent, int subgraph_idx)
 {
   if (event_array_ == nullptr && subgraph_allocations_ != nullptr)
   {
@@ -262,14 +263,15 @@ void MicroGraph::AllocateEventLogger (Event * parent, int subgraph_idx)
 
     event_array_len_ = subgraph->operators ()->size ();
 
-    event_array_ = (Event**) malloc (sizeof(Event*) * event_array_len_);
+    event_array_ = (void **) malloc (sizeof(Event*) * event_array_len_);
 
     for (size_t i = 0; i < event_array_len_; ++i)
     {
       registration = subgraph_allocations->node_and_registrations[i].registration;
 
       op_name = OpNameFromRegistration (registration);
-      event_array_[i] = Event_new (parent, EVENT_LAYER, (void *) op_name);
+
+      event_array_[i] = reinterpret_cast<void*> (Event_new (reinterpret_cast<Event*> (parent), EVENT_LAYER, (void *) op_name));
 
       // [Begin] Temporary solution
       subgraph_allocations->node_and_registrations[i].node.delegate =
@@ -285,7 +287,7 @@ void MicroGraph::DisposeEventLogger (void)
   {
     for (size_t i = 0; i < event_array_len_; ++i)
     {
-      Event_delete (&event_array_[i]);
+      Event_delete (reinterpret_cast<Event **>(&event_array_[i]));
     }
     free (event_array_);
     event_array_ = nullptr;
