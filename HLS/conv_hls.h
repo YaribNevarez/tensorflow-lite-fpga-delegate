@@ -1,7 +1,7 @@
 #ifndef CONV_HLS_H_
 #define CONV_HLS_H_
 
-#define DMA_CHANNEL_WIDTH 64
+#define DMA_CHANNEL_WIDTH 32
 
 typedef enum
 {

@@ -27,10 +27,9 @@ typedef struct
 static void Stream_setData(hls::stream<StreamChannel> & stream, unsigned int * data, unsigned int len)
 {
   StreamChannel channel;
-  for (unsigned int i = 0; i < len; i += 2)
+  for (unsigned int i = 0; i < len; i ++)
   {
-    channel.data = (0xFFFFFFFF00000000 & (((ap_uint<DMA_CHANNEL_WIDTH> ) data[i + 1]) << 32))
-              | (0x00000000FFFFFFFF & data[i]);
+    channel.data = data[i];
     stream.write (channel);
   }
 }

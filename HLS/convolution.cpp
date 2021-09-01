@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <algorithm>
 
-#define CONV_FILTER_BUFFER_SIZE     128*1024
-#define CONV_BIAS_BUFFER_SIZE       128
+#define CONV_FILTER_BUFFER_SIZE     512*1024
+#define CONV_BIAS_BUFFER_SIZE       512
 
 #define CONV_INPUT_BUFFER_SIZE      4*1024
 
@@ -231,8 +231,7 @@ inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
                                    TensorShape * filter_shape,
                                    TensorShape * output_shape)
 {
-  Data temp_0;
-  Data temp_1;
+  Data temp;
 
   AXIStream_index = 0;
 
@@ -256,15 +255,12 @@ inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
     StreamPeripheral_lookupTable[row] = AXIStream_index;
     StreamPeripheral_lookupTableRows[row] = StreamPeripheral_rowCount++;
 
-    INITIALIZE_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+    INITIALIZE_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j ++)
     {
 #pragma HLS pipeline
       channel_in = stream_in.read ();
-      temp_0.u32 = channel_in.data;
-      temp_1.u32 = channel_in.data >> 32;
-
-      StreamPeripheral_inputBuffer[AXIStream_index + j + 0] = temp_0.f32;
-      StreamPeripheral_inputBuffer[AXIStream_index + j + 1] = temp_1.f32;
+      temp.u32 = channel_in.data;
+      StreamPeripheral_inputBuffer[AXIStream_index + j] = temp.f32;
     }
     AXIStream_index += StreamPeripheral_rowSize;
   }
@@ -275,8 +271,7 @@ inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
 inline void StreamPeripheral_pushRowBuffer(hls::stream<StreamChannel> &stream_in,
                                            const int in_y_origin)
 {
-  Data temp_0;
-  Data temp_1;
+  Data temp;
 
   if (0 <= in_y_origin && StreamPeripheral_rowCount < StreamPeripheral_inputShape.dims_[1])
   {
@@ -286,15 +281,13 @@ inline void StreamPeripheral_pushRowBuffer(hls::stream<StreamChannel> &stream_in
 
     StreamPeripheral_lookupTableRows[StreamPeripheral_lookupIndex] = StreamPeripheral_rowCount++;
 
-    READ_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j += 2)
+    READ_INPUT_TENSOR_LINE_ROW: for (int j = 0; j < StreamPeripheral_rowSize; j ++)
     {
 #pragma HLS pipeline
       channel_in = stream_in.read ();
-      temp_0.u32 = channel_in.data;
-      temp_1.u32 = channel_in.data >> 32;
+      temp.u32 = channel_in.data;
 
-      StreamPeripheral_inputBuffer[i + j + 0] = temp_0.f32;
-      StreamPeripheral_inputBuffer[i + j + 1] = temp_1.f32;
+      StreamPeripheral_inputBuffer[i + j] = temp.f32;
     }
     AXIStream_index += StreamPeripheral_rowSize;
 
@@ -336,21 +329,13 @@ inline float StreamPeripheral_read (const int in_y,
 }
 
 inline void StreamPeripheral_output (hls::stream<StreamChannel> &stream_out,
-                              float activation_output)
+                                     ap_int<DMA_CHANNEL_WIDTH>  data)
 {
-  AXIStream_outputBuffer[AXIStreamOut_index % 2] = activation_output;
-  if (AXIStreamOut_index % 2 == 2 - 1)
-  {
-    Data temp_0;
-    Data temp_1;
-    temp_0.f32 = AXIStream_outputBuffer[0];
-    temp_1.f32 = AXIStream_outputBuffer[1];
-    channel_out.data = ((ap_uint<DMA_CHANNEL_WIDTH> ) temp_0.u32)
-    | (((ap_uint<DMA_CHANNEL_WIDTH> ) temp_1.u32) << 32);
-    channel_out.last = (AXIStreamOut_index + 1)
-    == AXIStreamOut_indexLast;
-    stream_out.write (channel_out);
-  }
+
+  channel_out.data = data;
+  channel_out.last = (AXIStreamOut_index + 1) == AXIStreamOut_indexLast;
+  stream_out.write (channel_out);
+
   AXIStreamOut_index ++;
 }
 
@@ -495,7 +480,7 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
                                                             output_activation_max);
 #endif
 
-          StreamPeripheral_output (stream_out, activation_output);
+          StreamPeripheral_output (stream_out, *(ap_int<DMA_CHANNEL_WIDTH>*) &activation_output);
         }
       }
     }
@@ -505,7 +490,6 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
 }
 
 inline void Convolution_loadProfile (hls::stream<StreamChannel> &stream_in,
-                                     hls::stream<StreamChannel> &stream_out,
                                      ConvProfile  & Conv_profile,
                                      int * debug)
 {
@@ -515,67 +499,57 @@ inline void Convolution_loadProfile (hls::stream<StreamChannel> &stream_in,
   *debug = 6;
 
   // stride_
-  channel_in = stream_in.read ();
-  Conv_profile.parameters_.stride_.height_   = channel_in.data;
-  Conv_profile.parameters_.stride_.width_    = channel_in.data >> 32;
+  Conv_profile.parameters_.stride_.height_   = stream_in.read ().data;
+  Conv_profile.parameters_.stride_.width_    = stream_in.read ().data;
 
   // dilation_
-  channel_in = stream_in.read ();
-  Conv_profile.parameters_.dilation_.height_ = channel_in.data;
-  Conv_profile.parameters_.dilation_.width_  = channel_in.data >> 32;
+  Conv_profile.parameters_.dilation_.height_ = stream_in.read ().data;
+  Conv_profile.parameters_.dilation_.width_  = stream_in.read ().data;
 
   // padding_
-  channel_in = stream_in.read ();
-  Conv_profile.parameters_.padding_.height_  = channel_in.data;
-  Conv_profile.parameters_.padding_.width_   = channel_in.data >> 32;
+  Conv_profile.parameters_.padding_.height_  = stream_in.read ().data;
+  Conv_profile.parameters_.padding_.width_   = stream_in.read ().data;
 
   // activation_
-  channel_in = stream_in.read ();
-  temp_0.u32 = channel_in.data;
-  temp_1.u32 = channel_in.data >> 32;
+  temp_0.u32 = stream_in.read ().data;
+  temp_1.u32 = stream_in.read ().data;
   Conv_profile.parameters_.activation_.max_ = temp_0.f32;
   Conv_profile.parameters_.activation_.min_  = temp_1.f32;
 
   // depth_multiplier_ for DEPTHWISE_CONV_2D and OperatorType
-  channel_in = stream_in.read ();
-  Conv_profile.parameters_.depth_multiplier_ = channel_in.data;
-  *((uint32_t*) &Conv_profile.parameters_.type_) = channel_in.data >> 32;
+  Conv_profile.parameters_.depth_multiplier_ = stream_in.read ().data;
+  *((uint32_t*) &Conv_profile.parameters_.type_) = stream_in.read ().data;
 
   // input_shape_
-  channel_in = stream_in.read ();
-  Conv_profile.input_shape_.dims_[0] = channel_in.data;
-  Conv_profile.input_shape_.dims_[1] = channel_in.data >> 32;
-  channel_in = stream_in.read ();
-  Conv_profile.input_shape_.dims_[2] = channel_in.data;
-  Conv_profile.input_shape_.dims_[3] = channel_in.data >> 32;
+  Conv_profile.input_shape_.dims_[0] = stream_in.read ().data;
+  Conv_profile.input_shape_.dims_[1] = stream_in.read ().data;
+
+  Conv_profile.input_shape_.dims_[2] = stream_in.read ().data;
+  Conv_profile.input_shape_.dims_[3] = stream_in.read ().data;
 
   // filter_shape_
-  channel_in = stream_in.read ();
-  Conv_profile.filter_shape_.dims_[0] = channel_in.data;
-  Conv_profile.filter_shape_.dims_[1] = channel_in.data >> 32;
-  channel_in = stream_in.read ();
-  Conv_profile.filter_shape_.dims_[2] = channel_in.data;
-  Conv_profile.filter_shape_.dims_[3] = channel_in.data >> 32;
+  Conv_profile.filter_shape_.dims_[0] = stream_in.read ().data;
+  Conv_profile.filter_shape_.dims_[1] = stream_in.read ().data;
+
+  Conv_profile.filter_shape_.dims_[2] = stream_in.read ().data;
+  Conv_profile.filter_shape_.dims_[3] = stream_in.read ().data;
 
   // bias_shape_
-  channel_in = stream_in.read ();
-  Conv_profile.bias_shape_.dims_[0] = channel_in.data;
-  Conv_profile.bias_shape_.dims_[1] = channel_in.data >> 32;
-  channel_in = stream_in.read ();
-  Conv_profile.bias_shape_.dims_[2] = channel_in.data;
-  Conv_profile.bias_shape_.dims_[3] = channel_in.data >> 32;
+  Conv_profile.bias_shape_.dims_[0] = stream_in.read ().data;
+  Conv_profile.bias_shape_.dims_[1] = stream_in.read ().data;
+
+  Conv_profile.bias_shape_.dims_[2] = stream_in.read ().data;
+  Conv_profile.bias_shape_.dims_[3] = stream_in.read ().data;
 
   // output_shape_
-  channel_in = stream_in.read ();
-  Conv_profile.output_shape_.dims_[0] = channel_in.data;
-  Conv_profile.output_shape_.dims_[1] = channel_in.data >> 32;
-  channel_in = stream_in.read ();
-  Conv_profile.output_shape_.dims_[2] = channel_in.data;
-  Conv_profile.output_shape_.dims_[3] = channel_in.data >> 32;
+  Conv_profile.output_shape_.dims_[0] = stream_in.read ().data;
+  Conv_profile.output_shape_.dims_[1] = stream_in.read ().data;
+
+  Conv_profile.output_shape_.dims_[2] = stream_in.read ().data;
+  Conv_profile.output_shape_.dims_[3] = stream_in.read ().data;
 }
 
 inline void Convolution_loadTensor (hls::stream<StreamChannel> &stream_in,
-                                    hls::stream<StreamChannel> &stream_out,
                                     TensorShape * tensorShape,
                                     CustomFormat * tensor,
                                     int * debug)
@@ -754,7 +728,7 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
                                                              output_activation_min,
                                                              output_activation_max);
 #endif
-            StreamPeripheral_output (stream_out, activation_output);
+            StreamPeripheral_output (stream_out, *(ap_int<DMA_CHANNEL_WIDTH>*) &activation_output);
           }
         }
       }
@@ -791,9 +765,9 @@ int conv (ConvExecutionMode mode,
   switch (mode)
   {
     case CONV_SETUP:
-      Convolution_loadProfile  (stream_in, stream_out, Conv_profile, debug);
-      Convolution_loadTensor   (stream_in, stream_out, &Conv_profile.filter_shape_, Conv_filter, debug);
-      Convolution_loadTensor   (stream_in, stream_out, &Conv_profile.bias_shape_, Conv_bias, debug);
+      Convolution_loadProfile  (stream_in, Conv_profile, debug);
+      Convolution_loadTensor   (stream_in, &Conv_profile.filter_shape_, Conv_filter, debug);
+      Convolution_loadTensor   (stream_in, &Conv_profile.bias_shape_, Conv_bias, debug);
       break;
     case CONV_EXECUTION:
       switch(Conv_profile.parameters_.type_)
