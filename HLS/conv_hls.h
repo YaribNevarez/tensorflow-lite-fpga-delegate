@@ -47,9 +47,22 @@ typedef struct
 
 typedef struct
 {
+  int input_;
+  int filter_;
+  int output_;
+} ConvOffset;
+
+typedef struct
+{
   float max_;
   float min_;
 } ConvActivation;
+
+typedef struct
+{
+  int max_;
+  int min_;
+} ConvQantActivation;
 
 typedef enum
 {
@@ -59,12 +72,14 @@ typedef enum
 
 typedef struct
 {
-  ConvStride      stride_;
-  ConvDilation    dilation_;
-  ConvPadding     padding_;
-  ConvActivation  activation_;
-  int             depth_multiplier_;
-  OperatorType    type_;
+  ConvStride          stride_;
+  ConvDilation        dilation_;
+  ConvPadding         padding_;
+  ConvOffset          offset_;
+  ConvActivation      activation_;
+  ConvQantActivation  quantized_activation_;
+  int                 depth_multiplier_;
+  OperatorType        type_;
 } ConvParameters;
 
 

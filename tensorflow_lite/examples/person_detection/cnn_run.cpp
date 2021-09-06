@@ -103,7 +103,7 @@ static FRESULT File_writeData (const char * file_name, const void * data, size_t
 }
 
 
-unsigned char model_data[1429892];
+unsigned char model_data[4966272];
 
 // The name of this function is important for Arduino compatibility.
 void setup ()
@@ -114,7 +114,12 @@ void setup ()
   rc = File_initializeSD ();
   ASSERT(rc == FR_OK);
 
-  rc = File_readData ("sconv", model_data, 1429892);
+  //rc = File_readData ("sconvi8", model_data, 1168880);
+  rc = File_readData ("vgg6_f32", model_data, 2207464);
+  //rc = File_readData ("vgg6_i8", model_data, 573792);
+  //rc = File_readData ("PERSON", model_data, 300568);
+
+
   ASSERT(rc == FR_OK);
 
   // Set up logging. Google style is to avoid globals or statics because of

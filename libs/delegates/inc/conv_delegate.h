@@ -37,12 +37,36 @@ public:
         const tflite::RuntimeShape& output_shape, float* output_data,
         Event * parent = nullptr);
 
+  virtual Task createTask (const tflite::ConvParams& params,
+         const int32_t* output_multiplier,
+         const int32_t* output_shift,
+         const tflite::RuntimeShape& input_shape, const int8_t* input_data,
+         const tflite::RuntimeShape& filter_shape, const int8_t* filter_data,
+         const tflite::RuntimeShape& bias_shape, const int32_t* bias_data,
+         const tflite::RuntimeShape& output_shape, int8_t* output_data,
+         Event * parent = nullptr);
+
   virtual Task createTask (const tflite::DepthwiseParams& params,
         const tflite::RuntimeShape& input_shape, const float* input_data,
         const tflite::RuntimeShape& filter_shape, const float* filter_data,
         const tflite::RuntimeShape& bias_shape, const float* bias_data,
         const tflite::RuntimeShape& output_shape, float* output_data,
         Event * parent = nullptr);
+
+  virtual Task createTask (const tflite::DepthwiseParams& params,
+         const int32_t* output_multiplier,
+         const int32_t* output_shift,
+         const tflite::RuntimeShape& input_shape, const int8_t* input_data,
+         const tflite::RuntimeShape& filter_shape, const int8_t* filter_data,
+         const tflite::RuntimeShape& bias_shape, const int32_t* bias_data,
+         const tflite::RuntimeShape& output_shape, int8_t* output_data,
+         Event * parent = nullptr);
+
+  static bool isValid (Task *);
+
+  virtual int execute (Task *);
+
+protected:
 
   virtual Task createTask (const ConvProfile& profile,
                            const float* input_data,
@@ -51,11 +75,15 @@ public:
                            float* output_data,
                            Event * parent = nullptr);
 
-  static bool isValid (Task *);
-
-  virtual int execute (Task *);
-
-protected:
+  virtual Task createTask (const ConvProfile& profile,
+                           const int8_t* input_data,
+                           const int8_t* filter_data,
+                           const int32_t* bias_data,
+                           int8_t* output_data,
+                           const int32_t* quant_output_multiplier,
+                           const int32_t* quant_output_shift,
+                           const int32_t  quant_len,
+                           Event * parent = nullptr);
 
   virtual void onDone_ip (void);
   virtual void onDone_dmaTx (void);

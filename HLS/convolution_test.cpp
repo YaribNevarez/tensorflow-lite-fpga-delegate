@@ -63,15 +63,22 @@ static void execution (unsigned int * input_tensor,
 {
   int debug;
   int num_samples;
-  int num_words_channel = (DMA_CHANNEL_WIDTH / 8) / sizeof(unsigned int);
   ap_uint<DMA_CHANNEL_WIDTH> data;
+#if FIXED_POINT
+  int8_t expected;
+  int8_t output;
+  int32_t threshold_error = 16;
+  int32_t error = 0;
+#else
   Data expected;
   Data output;
   float threshold_error = 0.50;
+  float error = 0;
+#endif
+
+  float max_error = 0;
   float mse_error = 0;
   float mean_error = 0;
-  float error = 0;
-  float max_error = 0;
 
   // Send setup transaction
   printf("_________ Execution _________\n");
@@ -90,18 +97,20 @@ static void execution (unsigned int * input_tensor,
 
   num_samples = output_tensor_len;
 
-  for (unsigned int i = 0; i < num_samples; i += num_words_channel)
+#if FIXED_POINT
+  for (int i = 0; i < num_samples; i ++)
   {
     data = stream_output_tensor.read ().data;
-    for (int word = 0; word < num_words_channel; word++)
-    {
-      output.u32 = data >> (8 * sizeof(unsigned int) * word);
-      expected.u32 = output_tensor[i + word];
 
-      if (output.f32 < expected.f32)
-        error = expected.f32 - output.f32;
+    for (int j = 0; j < 4; j ++)
+    {
+      output = data >> 8 * j;
+      expected = output_tensor[i] >> 8 * j;
+
+      if (output < expected)
+        error = expected - output;
       else
-        error = output.f32 - expected.f32;
+        error = output - expected;
 
       if (max_error < error)
         max_error = error;
@@ -111,10 +120,37 @@ static void execution (unsigned int * input_tensor,
 
       if (threshold_error <= error)
         printf (
-            "Output tensor data mismatch [FAIL]: Index %d; Expected %f, Output %f\n",
-            i + word, expected.f32, output.f32);
+            "Output tensor data mismatch [FAIL]: Index %d; Expected 0x%X, Output 0x%X\n",
+            i, expected, output);
     }
+
   }
+#else
+  for (unsigned int i = 0; i < num_samples; i ++)
+  {
+    data = stream_output_tensor.read ().data;
+
+    output.u32 = data;
+    expected.u32 = output_tensor[i];
+
+    if (output.f32 < expected.f32)
+      error = expected.f32 - output.f32;
+    else
+      error = output.f32 - expected.f32;
+
+    if (max_error < error)
+      max_error = error;
+
+    mse_error += pow(error, 2);
+    mean_error += error;
+
+    if (threshold_error <= error)
+      printf (
+          "Output tensor data mismatch [FAIL]: Index %d; Expected %f, Output %f\n",
+          i, expected.f32, output.f32);
+
+  }
+#endif
 
   mse_error /= num_samples;
   mean_error /= num_samples;
@@ -155,29 +191,55 @@ int main (void)
 {
   printf("Test Bench\n");
 
+#if FIXED_POINT
+  conv_test::TestCase fixedpoint_test_array[] =
+  {
+    {
+      .name                   = "CONV_2D",
+      .transaction_setup      = conv_test::int8::conv_2d::transaction_setup,
+      .transaction_setup_len  = conv_test::int8::conv_2d::transaction_setup_len,
+      .input_tensor           = conv_test::int8::conv_2d::input_tensor,
+      .input_tensor_len       = conv_test::int8::conv_2d::input_tensor_len,
+      .output_tensor          = conv_test::int8::conv_2d::output_tensor,
+      .output_tensor_len      = conv_test::int8::conv_2d::output_tensor_len
+    },
+    {
+      .name                   = "DEPTHWISE_CONV_2D",
+      .transaction_setup      = conv_test::int8::depthwise_conv_2d::transaction_setup,
+      .transaction_setup_len  = conv_test::int8::depthwise_conv_2d::transaction_setup_len,
+      .input_tensor           = conv_test::int8::depthwise_conv_2d::input_tensor,
+      .input_tensor_len       = conv_test::int8::depthwise_conv_2d::input_tensor_len,
+      .output_tensor          = conv_test::int8::depthwise_conv_2d::output_tensor,
+      .output_tensor_len      = conv_test::int8::depthwise_conv_2d::output_tensor_len
+    }
+  };
+
+  conv_test::run (fixedpoint_test_array, sizeof(fixedpoint_test_array) / sizeof(conv_test::TestCase));
+#else
   conv_test::TestCase test_array[] =
   {
     {
       .name                   = "CONV_2D",
-      .transaction_setup      = conv_test::conv_2d::transaction_setup,
-      .transaction_setup_len  = conv_test::conv_2d::transaction_setup_len,
-      .input_tensor           = conv_test::conv_2d::input_tensor,
-      .input_tensor_len       = conv_test::conv_2d::input_tensor_len,
-      .output_tensor          = conv_test::conv_2d::output_tensor,
-      .output_tensor_len      = conv_test::conv_2d::output_tensor_len
+      .transaction_setup      = conv_test::float32::conv_2d::transaction_setup,
+      .transaction_setup_len  = conv_test::float32::conv_2d::transaction_setup_len,
+      .input_tensor           = conv_test::float32::conv_2d::input_tensor,
+      .input_tensor_len       = conv_test::float32::conv_2d::input_tensor_len,
+      .output_tensor          = conv_test::float32::conv_2d::output_tensor,
+      .output_tensor_len      = conv_test::float32::conv_2d::output_tensor_len
     },
     {
       .name                   = "DEPTHWISE_CONV_2D",
-      .transaction_setup      = conv_test::depthwise_conv_2d::transaction_setup,
-      .transaction_setup_len  = conv_test::depthwise_conv_2d::transaction_setup_len,
-      .input_tensor           = conv_test::depthwise_conv_2d::input_tensor,
-      .input_tensor_len       = conv_test::depthwise_conv_2d::input_tensor_len,
-      .output_tensor          = conv_test::depthwise_conv_2d::output_tensor,
-      .output_tensor_len      = conv_test::depthwise_conv_2d::output_tensor_len
+      .transaction_setup      = conv_test::float32::depthwise_conv_2d::transaction_setup,
+      .transaction_setup_len  = conv_test::float32::depthwise_conv_2d::transaction_setup_len,
+      .input_tensor           = conv_test::float32::depthwise_conv_2d::input_tensor,
+      .input_tensor_len       = conv_test::float32::depthwise_conv_2d::input_tensor_len,
+      .output_tensor          = conv_test::float32::depthwise_conv_2d::output_tensor,
+      .output_tensor_len      = conv_test::float32::depthwise_conv_2d::output_tensor_len
     }
   };
 
   conv_test::run (test_array, sizeof(test_array) / sizeof(conv_test::TestCase));
+#endif
 
   printf("DONE!\n");
 

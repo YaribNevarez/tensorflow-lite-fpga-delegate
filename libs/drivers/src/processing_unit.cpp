@@ -42,7 +42,7 @@ int ProcessingUnit::execute (Transaction * transaction)
     size_t tx_buffer_size = transaction->txBufferSize;
     void * rx_buffer = transaction->rxBufferPtr;
     size_t rx_buffer_size = transaction->rxBufferSize;
-    int  *  flags = &transaction->flags;
+    volatile int  *  flags = &transaction->flags;
 
     transaction_ = transaction;
 
@@ -88,6 +88,9 @@ int ProcessingUnit::execute (Transaction * transaction)
     if (*flags & BLOCKING_IN_OUT)
     {
       while (!hwVtbl->IsDone (hwInstance));
+
+      if (rx_buffer != nullptr && 0 < rx_buffer_size)
+        while (!((*flags) & DMA_RX_DONE));
     }
   }
 
@@ -210,8 +213,8 @@ void ProcessingUnit::dmaRxInterruptHandler (void * data)
       ASSERT(transaction != nullptr);
       if ((transaction != nullptr) && (transaction->flags & RX_CACHE_FETCH))
       {
-        Xil_DCacheInvalidateRange ((INTPTR) transaction->rxBufferPtr,
-                                   transaction->rxBufferSize);
+        Xil_DCacheInvalidateRange ((INTPTR) transaction->rxBufferPtr - 0x1000,
+                                   transaction->rxBufferSize + 0x1000);
       }
 
       transaction->flags |= DMA_RX_DONE;

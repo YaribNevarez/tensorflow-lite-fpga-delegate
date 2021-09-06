@@ -57,32 +57,63 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   ConvFpgaDelegate::Task & task = *(reinterpret_cast<ConvFpgaDelegate::Task*>(node->user_data + sizeof(OpDataConv)));
 
-  if ((delegate != nullptr) && !ConvFpgaDelegate::isValid (&task))
-  {
-    task = delegate->createTask(ConvParamsFloat (params, data),
-        tflite::micro::GetTensorShape (input),
-        tflite::micro::GetTensorData<float> (input),
-        tflite::micro::GetTensorShape (filter),
-        tflite::micro::GetTensorData<float> (filter),
-        tflite::micro::GetTensorShape (bias),
-        tflite::micro::GetTensorData<float> (bias),
-        tflite::micro::GetTensorShape (output),
-        tflite::micro::GetTensorData<float> (output),
-        reinterpret_cast<Event *> (node->delegate));
-  }
-
   TF_LITE_ENSURE_EQ(context, input->type, output->type);
   TF_LITE_ENSURE_MSG(context, input->type == filter->type,
                      "Hybrid models are not supported on TFLite Micro.");
 
-  switch (input->type) {  // Already know in/out types are same.
-    case kTfLiteFloat32: {
-      if (delegate != nullptr)
+  if (delegate != nullptr)
+  {
+    switch (input->type)
+    {  // Already know in/out types are same.
+      case kTfLiteFloat32:
       {
+        if (!ConvFpgaDelegate::isValid (&task))
+        {
+          task = delegate->createTask(ConvParamsFloat (params, data),
+              tflite::micro::GetTensorShape (input),
+              tflite::micro::GetTensorData<float> (input),
+              tflite::micro::GetTensorShape (filter),
+              tflite::micro::GetTensorData<float> (filter),
+              tflite::micro::GetTensorShape (bias),
+              tflite::micro::GetTensorData<float> (bias),
+              tflite::micro::GetTensorShape (output),
+              tflite::micro::GetTensorData<float> (output),
+              reinterpret_cast<Event *> (node->delegate));
+        }
         delegate->execute (&task);
+        break;
       }
-      else
+      case kTfLiteInt8:
       {
+        if (!ConvFpgaDelegate::isValid (&task))
+        {
+          task = delegate->createTask(
+            ConvParamsQuantized (params, data),
+            data.per_channel_output_multiplier,
+            data.per_channel_output_shift,
+            tflite::micro::GetTensorShape (input),
+            tflite::micro::GetTensorData<int8_t> (input),
+            tflite::micro::GetTensorShape (filter),
+            tflite::micro::GetTensorData<int8_t> (filter),
+            tflite::micro::GetTensorShape (bias),
+            tflite::micro::GetTensorData<int32_t> (bias),
+            tflite::micro::GetTensorShape (output),
+            tflite::micro::GetTensorData<int8_t> (output),
+            reinterpret_cast<Event *> (node->delegate));
+        }
+        delegate->execute (&task);
+        break;
+      }
+      default:
+        TF_LITE_KERNEL_LOG(context, "Type %s (%d) not supported.",
+                           TfLiteTypeGetName (input->type), input->type);
+        return kTfLiteError;
+    }
+  }
+  else
+  {
+    switch (input->type) {  // Already know in/out types are same.
+      case kTfLiteFloat32: {
         tflite::reference_ops::Conv(
             ConvParamsFloat(params, data), tflite::micro::GetTensorShape(input),
             tflite::micro::GetTensorData<float>(input),
@@ -93,26 +124,28 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
             tflite::micro::GetTensorShape(output),
             tflite::micro::GetTensorData<float>(output),
             tflite::micro::GetTensorShape(nullptr), nullptr);
+        break;
       }
-      break;
+      case kTfLiteInt8: {
+        reference_integer_ops::ConvPerChannel(
+            ConvParamsQuantized(params, data),
+            data.per_channel_output_multiplier,
+            data.per_channel_output_shift,
+            tflite::micro::GetTensorShape(input),
+            tflite::micro::GetTensorData<int8_t>(input),
+            tflite::micro::GetTensorShape(filter),
+            tflite::micro::GetTensorData<int8_t>(filter),
+            tflite::micro::GetTensorShape(bias),
+            tflite::micro::GetTensorData<int32_t>(bias),
+            tflite::micro::GetTensorShape(output),
+            tflite::micro::GetTensorData<int8_t>(output));
+        break;
+      }
+      default:
+        TF_LITE_KERNEL_LOG(context, "Type %s (%d) not supported.",
+                           TfLiteTypeGetName(input->type), input->type);
+        return kTfLiteError;
     }
-    case kTfLiteInt8: {
-      reference_integer_ops::ConvPerChannel(
-          ConvParamsQuantized(params, data), data.per_channel_output_multiplier,
-          data.per_channel_output_shift, tflite::micro::GetTensorShape(input),
-          tflite::micro::GetTensorData<int8_t>(input),
-          tflite::micro::GetTensorShape(filter),
-          tflite::micro::GetTensorData<int8_t>(filter),
-          tflite::micro::GetTensorShape(bias),
-          tflite::micro::GetTensorData<int32_t>(bias),
-          tflite::micro::GetTensorShape(output),
-          tflite::micro::GetTensorData<int8_t>(output));
-      break;
-    }
-    default:
-      TF_LITE_KERNEL_LOG(context, "Type %s (%d) not supported.",
-                         TfLiteTypeGetName(input->type), input->type);
-      return kTfLiteError;
   }
   return kTfLiteOk;
 }

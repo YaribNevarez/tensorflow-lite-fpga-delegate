@@ -8,6 +8,24 @@
 #include "ap_axi_sdata.h"
 #include "conv_hls.h"
 
+#define CONV_FILTER_BUFFER_SIZE     512*1024
+#define CONV_BIAS_BUFFER_SIZE       512
+#define CONV_INPUT_BUFFER_SIZE      4*1024
+
+#define FIXED_POINT                 false
+
+#if !FIXED_POINT
+#define HYBRID_LOGARITHMIC          true
+#if HYBRID_LOGARITHMIC
+#define CUSTOM_SIGN_BIT             1
+#define CUSTOM_EXPONENT_BIT_WIDTH   4
+#define CUSTOM_MANTISSA_BIT_WIDTH   3
+
+// Set to 0 for normalized numbers [0 - 1), All exponents are on the left side, so they are stored without sign
+#define CUSTOM_EXPONENT_SIGN_BIT    1
+#endif
+#endif
+
 typedef ap_axis<DMA_CHANNEL_WIDTH, 2, 5, 6> StreamChannel;
 
 int conv (ConvExecutionMode mode,

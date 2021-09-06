@@ -5,6 +5,7 @@ from tensorflow.keras.datasets import cifar10
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import MaxPooling2D
 from tensorflow.keras.layers import SeparableConv2D
 from tensorflow.keras.layers import Dense
@@ -34,14 +35,13 @@ def prep_pixels(train, test):
 # define cnn model
 def define_model():
 	model = Sequential()
-	model.add(Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same', input_shape=(32, 32, 3)))
-	model.add(Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
-	model.add(MaxPooling2D((2, 2)))
-	model.add(Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
-	model.add(Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
+	model.add(SeparableConv2D(64, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same', input_shape=(32, 32, 3)))
 	model.add(MaxPooling2D((2, 2)))
 	model.add(SeparableConv2D(128, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
-	model.add(SeparableConv2D(128, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
+	model.add(BatchNormalization())
+	model.add(MaxPooling2D((2, 2)))
+	model.add(SeparableConv2D(512, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='same'))
+	model.add(BatchNormalization())
 	model.add(MaxPooling2D((2, 2)))
 	model.add(Flatten())
 	model.add(Dense(128, activation='relu', kernel_initializer='he_uniform'))
@@ -77,7 +77,7 @@ def run_test_harness():
 	# define model
 	model = define_model()
 	# fit model
-	history = model.fit(trainX, trainY, epochs=10, batch_size=64, validation_data=(testX, testY), verbose=1)
+	history = model.fit(trainX, trainY, epochs=15, batch_size=64, validation_data=(testX, testY), verbose=1)
 	# evaluate model
 	_, acc = model.evaluate(testX, testY, verbose=0)
 	print('> %.3f' % (acc * 100.0))
