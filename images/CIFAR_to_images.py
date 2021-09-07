@@ -1,30 +1,26 @@
-import tensorflow as tf
-from tensorflow.keras import datasets, layers, models
-import numpy as np
+from tensorflow.keras import datasets
 import os
-import matplotlib.pyplot as plt
 
 class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
                'dog', 'frog', 'horse', 'ship', 'truck']
 
 (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
-# Normalize pixel values to be between 0 and 1
-train_images, test_images = train_images , test_images 
+test_labels.tofile("labels")
 
-def save_binary(name, image, label):
-  filename = "CIFAR/" + name
-  image.tofile(name)
-  os.system("xxd -i " + name + " > " + filename)
-  os.system("rm " + name)
-  plt.imshow(image)
-  plt.show()
+# convert from integers to floats
+test_norm = test_images.astype('float32')
+# normalize to range 0-1
+test_norm = test_norm / 255.0
 
 if not os.path.exists('CIFAR'):
   os.mkdir("CIFAR")
 
-for i in range(5):
-  save_binary(str(i), test_images[i], test_labels[i][0])
+def save_binary(image, name):
+  filename = "CIFAR/" + name
+  image.tofile(filename)
 
+for i in range(len(test_norm)):
+  save_binary(test_norm[i], str(i))
 
 print("Done!")

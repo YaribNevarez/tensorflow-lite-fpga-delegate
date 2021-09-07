@@ -1027,6 +1027,10 @@ const char * ImageNetLabel (int i)
    return _labels[i];
 }
 
+float accuracy = 0;
+int num_samples = 0;
+int correct_samples = 0;
+
 // This dummy implementation writes person and no person scores to the error
 // console. Real applications will want to take some custom action instead, and
 // should implement their own versions of this function.
@@ -1034,13 +1038,9 @@ void RespondToDetection (tflite::ErrorReporter* error_reporter,
                          TfLiteTensor* output,
                          int expected_index)
 {
-  char message[80] = {0};
+  char message[80] = { 0 };
   float temp;
   int index[3] = { 0 };
-
-  TF_LITE_REPORT_ERROR(error_reporter, "\nTensorflow lite CNN CIFAR classificator");
-
-  TF_LITE_REPORT_ERROR(error_reporter, "Output tensor:");
 
   temp = 0;
   for (int i = 0; i < output->dims->data[1]; i++)
@@ -1054,16 +1054,21 @@ void RespondToDetection (tflite::ErrorReporter* error_reporter,
     }
   }
 
-  sprintf (message, "%f [%s]", output->data.f[index[0]], CifarClassLabels [index[0]]);
-  TF_LITE_REPORT_ERROR(error_reporter, message);
+  num_samples ++;
+  if (expected_index == index[0])
+  {
+    correct_samples += expected_index == index[0];
+    printf ("%f [%s]\n", output->data.f[index[0]], CifarClassLabels [index[0]]);
+  }
+  else
+  {
+    printf ("[FAIL]: %f [%s], expected: [%s]\n",
+            output->data.f[index[0]],
+            CifarClassLabels[index[0]],
+            CifarClassLabels[expected_index]);
+  }
 
-  sprintf (message, "%f [%s]", output->data.f[index[1]], CifarClassLabels [index[1]]);
-  TF_LITE_REPORT_ERROR(error_reporter, message);
+  accuracy = ((float) correct_samples) / ((float) num_samples);
 
-  sprintf (message, "%f [%s]", output->data.f[index[2]], CifarClassLabels [index[2]]);
-  TF_LITE_REPORT_ERROR(error_reporter, message);
-
-//  TF_LITE_REPORT_ERROR(error_reporter, "Classification: %s (%s)\n",
-//                       ImageNetLabel (index[0]),
-//                       (expected_index == index[0]) ? "PASS" : "FAIL");
+  printf ("Samples: %d, Accuracy: %f\n\n", num_samples, accuracy);
 }

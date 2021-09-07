@@ -105,6 +105,8 @@ static FRESULT File_writeData (const char * file_name, const void * data, size_t
 
 unsigned char model_data[4966272];
 
+unsigned char labels[10000];
+
 // The name of this function is important for Arduino compatibility.
 void setup ()
 {
@@ -184,29 +186,28 @@ void setup ()
                          output->dims->data[i]);
   }
   TF_LITE_REPORT_ERROR(error_reporter, "input->type = 0x%d", output->type);
+
+  rc = File_readData ("/CIFAR/labels", labels, 10000);
 }
 
 // The name of this function is important for Arduino compatibility.
 void loop ()
 {
+  char img_name[32] = { 0 };
   FRESULT rc;
 
   TfLiteStatus status;
   static int image_index = 0;
 
-  if (10 <= image_index)
-  {
-    image_index = 0;
-  }
+  sprintf(img_name, "/CIFAR/%d", image_index);
 
-  rc = File_readData ("dog", input->data.data, 12288);
+  rc = File_readData (img_name, input->data.data, 12288);
   ASSERT(rc == FR_OK);
 
   if (status != kTfLiteOk)
   {
     TF_LITE_REPORT_ERROR(error_reporter, "Image capture failed.");
   }
-
 
   status = interpreter->Invoke ();
 
@@ -215,12 +216,18 @@ void loop ()
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
 
-
-  interpreter->get_eventLog ();
+  //interpreter->get_eventLog ();
 
   TfLiteTensor* output = interpreter->output (0);
 
-  RespondToDetection (error_reporter, output, image_index);
+  RespondToDetection (error_reporter, output, labels[image_index]);
 
   image_index++;
+
+  if (image_index == 10000)
+  {
+    printf ("\nDone!\n");
+    while (true)
+      ;
+  }
 }

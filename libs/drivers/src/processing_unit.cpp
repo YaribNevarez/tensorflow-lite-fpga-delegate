@@ -42,7 +42,7 @@ int ProcessingUnit::execute (Transaction * transaction)
     size_t tx_buffer_size = transaction->txBufferSize;
     void * rx_buffer = transaction->rxBufferPtr;
     size_t rx_buffer_size = transaction->rxBufferSize;
-    volatile int  *  flags = &transaction->flags;
+    volatile int * flags = &transaction->flags;
 
     transaction_ = transaction;
 
