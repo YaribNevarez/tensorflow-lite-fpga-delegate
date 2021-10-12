@@ -75,6 +75,7 @@ int ProcessingUnit::execute (Transaction * transaction)
 
       status = dmaVtbl->Move (dmaInstance, (void *) tx_buffer, tx_buffer_size,
                               MEMORY_TO_HARDWARE);
+      ASSERT(status == XST_SUCCESS);
     }
 
     if (rx_buffer != nullptr && 0 < rx_buffer_size)
@@ -83,6 +84,7 @@ int ProcessingUnit::execute (Transaction * transaction)
 
       status = dmaVtbl->Move (dmaInstance, (void *) rx_buffer, rx_buffer_size,
                               HARDWARE_TO_MEMORY);
+      ASSERT(status == XST_SUCCESS);
     }
 
     if (*flags & BLOCKING_IN_OUT)
