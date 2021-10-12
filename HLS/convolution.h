@@ -18,8 +18,12 @@
 #define HYBRID_LOGARITHMIC          true
 #if HYBRID_LOGARITHMIC
 #define CUSTOM_SIGN_BIT             1
-#define CUSTOM_EXPONENT_BIT_WIDTH   4
-#define CUSTOM_MANTISSA_BIT_WIDTH   3
+#define CUSTOM_EXPONENT_BIT_WIDTH   5
+#define CUSTOM_MANTISSA_BIT_WIDTH   2
+
+
+#define CORRECTION                  true
+
 
 // Set to 0 for normalized numbers [0 - 1), All exponents are on the left side, so they are stored without sign
 #define CUSTOM_EXPONENT_SIGN_BIT    1

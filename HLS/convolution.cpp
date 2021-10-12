@@ -715,10 +715,25 @@ inline void Convolution_loadTensor (hls::stream<StreamChannel> &stream_in,
       exponent[j] = DATA32_GET_EXPONENT(temp[j].u32);
       mantissa[j] = DATA32_GET_MANTISSA(temp[j].u32);
 
-      if ((CUSTOM_MANTISSA_BIT_WIDTH == 0) && (0x400000 < (0x7FFFFF & mantissa[j])))
+#if CORRECTION
+#if CUSTOM_MANTISSA_BIT_WIDTH == 0
+      if (0x400000 < (0x7FFFFF & mantissa[j]))
       {
         exponent[j]++;
       }
+#else
+      if ((0x400000 >> CUSTOM_MANTISSA_BIT_WIDTH) < ((0x7FFFFF >> CUSTOM_MANTISSA_BIT_WIDTH) & mantissa[j]))
+      {
+        MagnitudeFormat mantissa_temp = (0x7FFFFF & mantissa[j]) + (0x400000 >> CUSTOM_MANTISSA_BIT_WIDTH);
+
+        if (0x800000 & mantissa_temp)
+        {
+          exponent[j]++;
+        }
+        mantissa[j] = mantissa_temp;
+      }
+#endif
+#endif
 
       if (exponent[j] < - ((1 << (CUSTOM_EXPONENT_BIT_WIDTH - CUSTOM_EXPONENT_SIGN_BIT)) - 1))
       {
@@ -823,6 +838,7 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
       for (int out_x = 0; out_x < output_width; ++out_x)
       {
 #pragma HLS pipeline
+        const int in_x_origin = (out_x * stride_width) - pad_width;
         for (int ic = 0; ic < input_depth; ++ic)
         {
 #pragma HLS pipeline
@@ -830,8 +846,6 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
           {
 #pragma HLS pipeline
             const int oc = m + ic * depth_multiplier;
-            const int in_x_origin = (out_x * stride_width) - pad_width;
-
             total = 0;
 #if HYBRID_LOGARITHMIC
             Total_magnitude = 0;
