@@ -49,7 +49,7 @@ TfLiteTensor* input = nullptr;
 // signed value.
 
 // An area of memory to use for input, output, and intermediate arrays.
-constexpr int kTensorArenaSize = 128 * 1024 * 1024;
+constexpr int kTensorArenaSize = 256 * 1024 * 1024;
 static uint8_t tensor_arena[kTensorArenaSize];
 }  // namespace
 
@@ -117,10 +117,17 @@ void setup ()
   ASSERT(rc == FR_OK);
 
   //rc = File_readData ("sconvi8", model_data, 1168880);
-  rc = File_readData ("vgg6_f32", model_data, 2207464);
+  //rc = File_readData ("vgg6_f32", model_data, 2207464); // [Acc 71.8%, 143]
   //rc = File_readData ("vgg6_i8", model_data, 573792);
   //rc = File_readData ("PERSON", model_data, 300568);
+  //rc = File_readData ("vgg4_f32", model_data, 3739612); // [Acc 63.09, 143] [Acc 46.51, 150]
+  //rc = File_readData ("mobile5", model_data, 214588); // [Acc 31.44, 143] [Acc 66.67, 154] [Acc 12.58, 152]
 
+  //rc = File_readData ("models/mob_f32", model_data, 214648);
+  //rc = File_readData ("models/mob_i8",  model_data,  65656);
+
+  rc = File_readData ("models/vgg_f32", model_data, 3739612);
+  //rc = File_readData ("models/vgg_i8",  model_data,  958768);
 
   ASSERT(rc == FR_OK);
 
@@ -161,7 +168,7 @@ void setup ()
     return;
   }
 
-  interpreter->enable_delegate(true);
+  interpreter->enable_delegate(true); //////////////////////////////
 
   // Get information about the memory area to use for the model's input.
   input = interpreter->input (0);

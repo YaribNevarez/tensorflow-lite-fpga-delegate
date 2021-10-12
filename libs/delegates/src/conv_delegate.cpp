@@ -636,7 +636,7 @@ ConvFpgaDelegate::Task ConvFpgaDelegate::createTask (const ConvProfile& profile,
   return task;
 }
 
-inline bool ConvFpgaDelegate::isValid(Task * profile)
+bool ConvFpgaDelegate::isValid(Task * profile)
 {
   return (profile != nullptr)
       && (((0 < profile->setup.txBufferSize)

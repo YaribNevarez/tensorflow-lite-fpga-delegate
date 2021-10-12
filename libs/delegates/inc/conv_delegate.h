@@ -4,8 +4,8 @@
  *  Created on: July 31st, 2021
  *      Author: Yarib Nevarez
  */
-#ifndef CONV_DELEGATE_H_
-#define CONV_DELEGATE_H_
+#ifndef CONV_CUSTOM_DELEGATE_H_
+#define CONV_CUSTOM_DELEGATE_H_
 
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/types.h"
@@ -92,4 +92,4 @@ protected:
   virtual void ConvInternal (Task *);
 };
 
-#endif // CONV_DELEGATE_H_
+#endif // CONV_CUSTOM_DELEGATE_H_
