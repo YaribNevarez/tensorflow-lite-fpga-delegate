@@ -251,6 +251,10 @@ static NavigationReturn Event_collectScheduleData (Event * event, void * data)
         color = (char*) "#1864ab";
         break;
       case EVENT_LAYER:
+
+        if (event->first_child != NULL)
+          return result = NAV_CONTINUE;;
+
         color = (char*) "#4a98c9";
         break;
       case EVENT_HARDWARE:
@@ -301,24 +305,40 @@ void Event_print (Event * event)
 
   if (event != NULL)
   {
-    TextLines data;
+    TextLines scheduleData;
+    TextLines latencyData;
 
-    memset (data, 0, sizeof(data));
-    Event_navegate (event, Event_collectScheduleData, data);
+    memset (scheduleData, 0, sizeof(scheduleData));
+    Event_navegate (event, Event_collectScheduleData, scheduleData);
 
     printf ("\nSchedule\n");
-    printf ("Absolute offset: [%s]\n", data[0]);
-    printf ("Latency:         [%s]\n", data[1]);
-    printf ("Name:            [%s]\n", data[2]);
-    printf ("Color:           [%s]\n", data[3]);
+    printf ("Absolute offset: [%s]\n", scheduleData[0]);
+    printf ("Latency:         [%s]\n", scheduleData[1]);
+    printf ("Name:            [%s]\n", scheduleData[2]);
+    printf ("Color:           [%s]\n", scheduleData[3]);
 
-    memset (data, 0, sizeof(data));
-    Event_navegate (event, Event_collectLatencyData, data);
+    memset (latencyData, 0, sizeof(latencyData));
+    Event_navegate (event, Event_collectLatencyData, latencyData);
 
     printf ("\nPerformance\n");
-    printf ("II offset:   [%s]\n", data[0]);
-    printf ("SW Latency:  [%s]\n", data[1]);
-    printf ("HW Latency:  [%s]\n", data[2]);
-    printf ("Name:        [%s]\n", data[3]);
+    printf ("II offset:   [%s]\n", latencyData[0]);
+    printf ("SW Latency:  [%s]\n", latencyData[1]);
+    printf ("HW Latency:  [%s]\n", latencyData[2]);
+    printf ("Name:        [%s]\n", latencyData[3]);
+
+////////////////////////////////////////////////////////////
+    printf ("\n#Python:\n");
+    printf ("begin   = np.array([%s])\n", scheduleData[0]);
+    printf ("latency = np.array([%s])\n", scheduleData[1]);
+    printf ("event   = [%s]\n", scheduleData[2]);
+    printf ("colors  = [%s]\n", scheduleData[3]);
+
+    printf ("\n");
+
+    printf ("data = [[%s],\n", latencyData[0]);
+    printf ("        [ %s],\n", latencyData[1]);
+    printf ("        [ %s]]\n", latencyData[2]);
+
+    printf ("columns = (%s)\n\n\n", latencyData[3]);
   }
 }
