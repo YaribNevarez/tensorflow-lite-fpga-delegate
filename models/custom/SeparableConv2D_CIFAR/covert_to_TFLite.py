@@ -4,12 +4,18 @@ from tensorflow.keras import datasets, layers, models, utils
 import matplotlib.pyplot as plt
 import os
 
+filename = "mobile5"
+
+if not os.path.exists(filename):
+  print("Folder " + filename + " does not exist.")
+  exit()
+
 # Recreate the exact same model, including its weights and the optimizer
-model = tf.keras.models.load_model('sconv.h5')
+model = tf.keras.models.load_model(filename+ "/" +filename + '.h5')
 
 model.summary()
 
-tf.keras.utils.plot_model(model, "sconv.png", show_shapes=True, show_layer_names=True, expand_nested=True)
+tf.keras.utils.plot_model(model, filename + ".png", show_shapes=True, show_layer_names=True, expand_nested=True)
 
 (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
@@ -25,17 +31,15 @@ def representative_dataset():
 
 # Convert the model.
 converter = tf.lite.TFLiteConverter.from_keras_model(model)
-converter.optimizations = [tf.lite.Optimize.DEFAULT]
-converter.representative_dataset = representative_dataset
-converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+#converter.optimizations = [tf.lite.Optimize.DEFAULT]
+#converter.representative_dataset = representative_dataset
+#converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
 converter.inference_input_type = tf.float32  # or tf.uint8
 converter.inference_output_type = tf.float32  # or tf.uint8
 tflite_model = converter.convert()
 
 # Save the model.
-with open('sconvi8.tflite', 'wb') as f:
+with open(filename + "/" + filename + '.tflite', 'wb') as f:
   f.write(tflite_model)
-
-#os.system("xxd -i sconv.tflite > sconv.tflite.cpp")
 
 print("Done!")
