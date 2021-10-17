@@ -1,43 +1,42 @@
 /*
- * conv_delegate.h
+ * tp_delegate.h
  *
- *  Created on: July 31st, 2021
+ *  Created on: October 14th, 2021
  *      Author: Yarib Nevarez
  */
-#ifndef CONV_CUSTOM_DELEGATE_H_
-#define CONV_CUSTOM_DELEGATE_H_
+#ifndef TP_DELEGATE_H_
+#define TP_DELEGATE_H_
 
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/types.h"
 
-#include "processing_unit.h"
+#include "tensor_processor.h"
 #include "conv_hls.h"
 #include "event.h"
 
-class ConvFpgaDelegate: protected ProcessingUnit
+class TPDelegate
 {
 public:
 
   typedef struct
   {
-    ProcessingUnit::Transaction setup;
-    ProcessingUnit::Transaction compute;
-    Event * event;
-  } Task;
+    TensorProcessor::Task task_array[16];
+    int task_array_len;
+  } Job;
 
-  ConvFpgaDelegate ();
-  ~ConvFpgaDelegate ();
+  TPDelegate ();
+  ~TPDelegate ();
 
   virtual int initialize (void);
 
-  virtual Task createTask (const tflite::ConvParams& params,
+  virtual Job createJob (const tflite::ConvParams& params,
         const tflite::RuntimeShape& input_shape, const float* input_data,
         const tflite::RuntimeShape& filter_shape, const float* filter_data,
         const tflite::RuntimeShape& bias_shape, const float* bias_data,
         const tflite::RuntimeShape& output_shape, float* output_data,
         Event * parent = nullptr);
 
-  virtual Task createTask (const tflite::ConvParams& params,
+  virtual Job createJob (const tflite::ConvParams& params,
          const int32_t* output_multiplier,
          const int32_t* output_shift,
          const tflite::RuntimeShape& input_shape, const int8_t* input_data,
@@ -46,14 +45,14 @@ public:
          const tflite::RuntimeShape& output_shape, int8_t* output_data,
          Event * parent = nullptr);
 
-  virtual Task createTask (const tflite::DepthwiseParams& params,
+  virtual Job createJob (const tflite::DepthwiseParams& params,
         const tflite::RuntimeShape& input_shape, const float* input_data,
         const tflite::RuntimeShape& filter_shape, const float* filter_data,
         const tflite::RuntimeShape& bias_shape, const float* bias_data,
         const tflite::RuntimeShape& output_shape, float* output_data,
         Event * parent = nullptr);
 
-  virtual Task createTask (const tflite::DepthwiseParams& params,
+  virtual Job createJob (const tflite::DepthwiseParams& params,
          const int32_t* output_multiplier,
          const int32_t* output_shift,
          const tflite::RuntimeShape& input_shape, const int8_t* input_data,
@@ -62,34 +61,13 @@ public:
          const tflite::RuntimeShape& output_shape, int8_t* output_data,
          Event * parent = nullptr);
 
-  static bool isValid (Task *);
+  static bool isValid (Job &);
 
-  virtual int execute (Task *);
+  virtual int execute (Job &);
 
 protected:
 
-  virtual Task createTask (const ConvProfile& profile,
-                           const float* input_data,
-                           const float* filter_data,
-                           const float* bias_data,
-                           float* output_data,
-                           Event * parent = nullptr);
-
-  virtual Task createTask (const ConvProfile& profile,
-                           const int8_t* input_data,
-                           const int8_t* filter_data,
-                           const int32_t* bias_data,
-                           int8_t* output_data,
-                           const int32_t* quant_output_multiplier,
-                           const int32_t* quant_output_shift,
-                           const int32_t  quant_len,
-                           Event * parent = nullptr);
-
-  virtual void onDone_ip (void);
-  virtual void onDone_dmaTx (void);
-  virtual void onDone_dmaRx (void);
-
-  virtual void ConvInternal (Task *);
+  TensorProcessor::ProcessorArray * singleton_tp_array_ = nullptr;
 };
 
-#endif // CONV_CUSTOM_DELEGATE_H_
+#endif // TP_DELEGATE_H_

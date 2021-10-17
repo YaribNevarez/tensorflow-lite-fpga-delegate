@@ -117,7 +117,7 @@ void setup ()
   ASSERT(rc == FR_OK);
 
   //rc = File_readData ("sconvi8", model_data, 1168880);
-  //rc = File_readData ("vgg6_f32", model_data, 2207464); // [Acc 71.8%, 143]
+  rc = File_readData ("vgg6_f32", model_data, 2207464); // [Acc 71.8%, 143] [Acc 70.6%, 152c]
   //rc = File_readData ("vgg6_i8", model_data, 573792);
   //rc = File_readData ("PERSON", model_data, 300568);
   //rc = File_readData ("vgg4_f32", model_data, 3739612); // [Acc 63.09, 143] [Acc 46.51, 150]
@@ -126,7 +126,7 @@ void setup ()
   //rc = File_readData ("models/mob_f32", model_data, 214648);
   //rc = File_readData ("models/mob_i8",  model_data,  65656);
 
-  rc = File_readData ("models/vgg_f32", model_data, 3739612);
+  //rc = File_readData ("models/vgg_f32", model_data, 3739612);
   //rc = File_readData ("models/vgg_i8",  model_data,  958768);
 
   ASSERT(rc == FR_OK);
@@ -223,7 +223,7 @@ void loop ()
     TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
   }
 
-  //interpreter->get_eventLog ();
+  interpreter->get_eventLog ();
 
   TfLiteTensor* output = interpreter->output (0);
 

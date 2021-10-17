@@ -29,7 +29,7 @@ limitations under the License.
 #include "tensorflow/lite/micro/micro_profiler.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/schema/schema_utils.h"
-#include "conv_delegate.h"
+#include "tp_delegate.h"
 
 namespace tflite {
 
@@ -82,7 +82,7 @@ MicroInterpreter::~MicroInterpreter() {
 
   if (delegate_ != nullptr)
   {
-    delete reinterpret_cast<ConvFpgaDelegate*> (delegate_);
+    delete reinterpret_cast<TPDelegate*> (delegate_);
   }
 }
 
@@ -276,7 +276,7 @@ TfLiteStatus MicroInterpreter::AllocateTensors() {
 
   TF_LITE_ENSURE_STATUS(ResetVariableTensors());
 
-  event_ = Event_new (nullptr, EVENT_NETWORK, (void *) "Interpreter");
+  event_ = Event_new (nullptr, EVENT_MODEL, (void *) "MODEL");
 
   graph_.AllocateEventLogger (event_, 0);
 
@@ -404,11 +404,11 @@ void MicroInterpreter::enable_delegate(bool enable)
 {
   if (enable)
   {
-    delegate_ = new ConvFpgaDelegate ();
+    delegate_ = new TPDelegate ();
     TFLITE_DCHECK(delegate_ != nullptr);
     if (delegate_)
     {
-      int result = reinterpret_cast<ConvFpgaDelegate*> (delegate_)->initialize ();
+      int result = reinterpret_cast<TPDelegate*> (delegate_)->initialize ();
       TFLITE_DCHECK(result == XST_SUCCESS);
     }
   }

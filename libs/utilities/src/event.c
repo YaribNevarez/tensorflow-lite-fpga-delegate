@@ -247,15 +247,18 @@ static NavigationReturn Event_collectScheduleData (Event * event, void * data)
 
     switch (event->type)
     {
-      case EVENT_NETWORK:
+      case EVENT_MODEL:
         color = (char*) "#1864ab";
         break;
-      case EVENT_LAYER:
+      case EVENT_OPERATION:
 
-        if (event->first_child != NULL)
-          return result = NAV_CONTINUE;;
+//        if (event->first_child != NULL)
+//          return result = NAV_CONTINUE;
 
         color = (char*) "#4a98c9";
+        break;
+      case EVENT_DELEGATE:
+        color = (char*) "#6faed4";
         break;
       case EVENT_HARDWARE:
         color = (char*) "#94c4df";
@@ -283,10 +286,13 @@ static NavigationReturn Event_collectLatencyData (Event * event, void * data)
 
   if ((event != NULL) && (data != NULL))
   {
-    if (event->type == EVENT_LAYER)
+    if (event->type == EVENT_OPERATION)
     { /* Then is a hardware event */
       TextLines * text = (TextLines*) data;
-      double hw_latency = (event->first_child != NULL) ? event->first_child->latency : 0.0;
+      double hw_latency =
+          (event->first_child != NULL)
+       && (event->first_child->first_child != NULL) ?
+           event->first_child->first_child->latency : 0.0;
 
       sprintf (&(*text)[0][strlen ((*text)[0])], "%.3lf, ", event->absolute_offset * 1000);
       sprintf (&(*text)[1][strlen ((*text)[1])], "%.3lf, ", event->latency * 1000);

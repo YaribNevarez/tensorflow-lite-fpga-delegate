@@ -22,8 +22,9 @@ typedef struct _Event Event;
 
 typedef enum
 {
- EVENT_NETWORK,
- EVENT_LAYER,
+ EVENT_MODEL,
+ EVENT_OPERATION,
+ EVENT_DELEGATE,
  EVENT_HARDWARE
 } EventType;
 

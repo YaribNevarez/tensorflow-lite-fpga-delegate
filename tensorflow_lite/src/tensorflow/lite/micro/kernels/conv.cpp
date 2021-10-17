@@ -25,14 +25,14 @@ limitations under the License.
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/padding.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
-#include "conv_delegate.h"
+#include "tp_delegate.h"
 
 namespace tflite {
 namespace {
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
-  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(ConvFpgaDelegate::Task));
+  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(TPDelegate::Job));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -53,9 +53,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TFLITE_DCHECK(node->user_data != nullptr);
   const auto& data = *(static_cast<const OpDataConv*>(node->user_data));
 
-  ConvFpgaDelegate * delegate = reinterpret_cast<ConvFpgaDelegate *> (tflite::micro::GetDelegate (context));
+  TPDelegate * delegate = reinterpret_cast<TPDelegate *> (tflite::micro::GetDelegate (context));
 
-  ConvFpgaDelegate::Task & task = *(reinterpret_cast<ConvFpgaDelegate::Task*>(node->user_data + sizeof(OpDataConv)));
+  TPDelegate::Job & job = *(reinterpret_cast<TPDelegate::Job*> (node->user_data + sizeof(OpDataConv)));
 
   TF_LITE_ENSURE_EQ(context, input->type, output->type);
   TF_LITE_ENSURE_MSG(context, input->type == filter->type,
@@ -67,27 +67,27 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     {  // Already know in/out types are same.
       case kTfLiteFloat32:
       {
-        if (!ConvFpgaDelegate::isValid (&task))
+        if (!TPDelegate::isValid (job))
         {
-          task = delegate->createTask(ConvParamsFloat (params, data),
-              tflite::micro::GetTensorShape (input),
-              tflite::micro::GetTensorData<float> (input),
-              tflite::micro::GetTensorShape (filter),
-              tflite::micro::GetTensorData<float> (filter),
-              tflite::micro::GetTensorShape (bias),
-              tflite::micro::GetTensorData<float> (bias),
-              tflite::micro::GetTensorShape (output),
-              tflite::micro::GetTensorData<float> (output),
-              reinterpret_cast<Event *> (node->delegate));
+          job = delegate->createJob(ConvParamsFloat (params, data),
+                tflite::micro::GetTensorShape (input),
+                tflite::micro::GetTensorData<float> (input),
+                tflite::micro::GetTensorShape (filter),
+                tflite::micro::GetTensorData<float> (filter),
+                tflite::micro::GetTensorShape (bias),
+                tflite::micro::GetTensorData<float> (bias),
+                tflite::micro::GetTensorShape (output),
+                tflite::micro::GetTensorData<float> (output),
+                reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (&task);
+        delegate->execute (job);
         break;
       }
       case kTfLiteInt8:
       {
-        if (!ConvFpgaDelegate::isValid (&task))
+        if (!TPDelegate::isValid (job))
         {
-          task = delegate->createTask(
+          job = delegate->createJob(
             ConvParamsQuantized (params, data),
             data.per_channel_output_multiplier,
             data.per_channel_output_shift,
@@ -101,7 +101,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
             tflite::micro::GetTensorData<int8_t> (output),
             reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (&task);
+        delegate->execute (job);
         break;
       }
       default:

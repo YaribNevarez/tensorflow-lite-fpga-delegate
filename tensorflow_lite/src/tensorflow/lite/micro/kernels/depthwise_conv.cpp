@@ -26,14 +26,14 @@ limitations under the License.
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/padding.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
-#include "conv_delegate.h"
+#include "tensor_processor.h"
 
 namespace tflite {
 namespace {
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
-  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(ConvFpgaDelegate::Task));
+  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(TensorProcessor::Task));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -55,15 +55,15 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
           ? tflite::micro::GetEvalInput(context, node, kDepthwiseConvBiasTensor)
           : nullptr;
 
-  ConvFpgaDelegate * delegate = reinterpret_cast<ConvFpgaDelegate *> (tflite::micro::GetDelegate (context));
+  TensorProcessor * delegate = reinterpret_cast<TensorProcessor *> (tflite::micro::GetDelegate (context));
 
-  ConvFpgaDelegate::Task & task = *(reinterpret_cast<ConvFpgaDelegate::Task*>(node->user_data + sizeof(OpDataConv)));
+  TensorProcessor::Task & task = *(reinterpret_cast<TensorProcessor::Task*>(node->user_data + sizeof(OpDataConv)));
 
   if (delegate != nullptr)
   {
     switch (input->type) {  // Already know in/out types are same.
       case kTfLiteFloat32: {
-        if (!ConvFpgaDelegate::isValid (&task))
+        if (!TensorProcessor::isValid (task))
         {
           task = delegate->createTask (
               DepthwiseConvParamsFloat (params, data),
@@ -77,11 +77,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
               tflite::micro::GetTensorData<float> (output),
               reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (&task);
+        delegate->execute (task);
         break;
       }
       case kTfLiteInt8: {
-        if (!ConvFpgaDelegate::isValid (&task))
+        if (!TensorProcessor::isValid (task))
         {
           task = delegate->createTask (
               DepthwiseConvParamsQuantized (params, data),
@@ -97,7 +97,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
               tflite::micro::GetTensorData<int8_t>(output),
               reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (&task);
+        delegate->execute (task);
         break;
       }
       default:

@@ -271,7 +271,7 @@ void MicroGraph::AllocateEventLogger (void * parent, int subgraph_idx)
 
       op_name = OpNameFromRegistration (registration);
 
-      event_array_[i] = reinterpret_cast<void*> (Event_new (reinterpret_cast<Event*> (parent), EVENT_LAYER, (void *) op_name));
+      event_array_[i] = reinterpret_cast<void*> (Event_new (reinterpret_cast<Event*> (parent), EVENT_OPERATION, (void *) op_name));
 
       // [Begin] Temporary solution
       subgraph_allocations->node_and_registrations[i].node.delegate =

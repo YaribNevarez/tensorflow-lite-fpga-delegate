@@ -99,6 +99,15 @@ int ProcessingUnit::execute (Transaction * transaction)
   return status;
 }
 
+void ProcessingUnit::set_transaction_flags (Transaction & transaction, int flags)
+{
+  transaction.flags = flags;
+}
+
+int ProcessingUnit::get_transaction_flags (Transaction & transaction)
+{
+  return transaction.flags;
+}
 
 void ProcessingUnit::onDone_ip (void)
 {
