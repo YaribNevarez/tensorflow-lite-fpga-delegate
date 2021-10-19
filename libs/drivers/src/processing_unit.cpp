@@ -99,12 +99,12 @@ int ProcessingUnit::execute (Transaction * transaction)
   return status;
 }
 
-void ProcessingUnit::set_transaction_flags (Transaction & transaction, int flags)
+void ProcessingUnit::setTransactionFlags (Transaction & transaction, int flags)
 {
   transaction.flags = flags;
 }
 
-int ProcessingUnit::get_transaction_flags (Transaction & transaction)
+int ProcessingUnit::getTransactionFlags (Transaction & transaction)
 {
   return transaction.flags;
 }

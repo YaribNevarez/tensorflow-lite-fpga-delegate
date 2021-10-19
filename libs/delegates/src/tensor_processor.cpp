@@ -252,14 +252,14 @@ TensorProcessor::Task TensorProcessor::createTask (const tflite::DepthwiseParams
                      parent);
 }
 
-void TensorProcessor::set_execution_flags (TensorProcessor::Task & task, int flags)
+void TensorProcessor::setExecutionFlags (TensorProcessor::Task & task, int flags)
 {
-  ProcessingUnit::set_transaction_flags (task.compute, flags);
+  ProcessingUnit::setTransactionFlags (task.compute, flags);
 }
 
-int TensorProcessor::get_execution_flags (TensorProcessor::Task & task)
+int TensorProcessor::getExecutionFlags (TensorProcessor::Task & task)
 {
-  return ProcessingUnit::get_transaction_flags (task.compute);
+  return ProcessingUnit::getTransactionFlags (task.compute);
 }
 
 TensorProcessor::Task TensorProcessor::createTask (const ConvProfile& profile,

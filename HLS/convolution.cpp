@@ -491,17 +491,14 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   CONV_OUTPUT_BATCH: for (int batch = 0; batch < batches; ++batch)
   {
 #pragma HLS pipeline
-    CONV_OUTPUT_ROW: for (int out_y = 0; out_y < output_height; ++out_y)
+    CONV_OUTPUT_ROW: for (int out_y = - pad_height; out_y < output_height - pad_height; ++out_y)
     {
 #pragma HLS pipeline
-      const int in_y_origin = (out_y * stride_height) - pad_height;
+      StreamPeripheral_pushRowBuffer(stream_in, out_y);
 
-      StreamPeripheral_pushRowBuffer(stream_in, in_y_origin);
-
-      CONV_OUTPUT_COL: for (int out_x = 0; out_x < output_width; ++out_x)
+      CONV_OUTPUT_COL: for (int out_x = - pad_width; out_x < output_width - pad_width; ++out_x)
       {
 #pragma HLS pipeline
-        const int in_x_origin = (out_x * stride_width) - pad_width;
         CONV_OUTPUT_CHANNEL: for (int out_channel = 0; out_channel < output_depth; ++out_channel)
         {
 #pragma HLS pipeline
@@ -512,11 +509,11 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
           CONV_FILTER_ROW: for (int filter_y = 0; filter_y < filter_height; ++filter_y)
           {
 #pragma HLS pipeline
-            const int in_y = in_y_origin + dilation_height_factor * filter_y;
+            const int in_y = out_y + filter_y;
             CONV_FILTER_COL: for (int filter_x = 0; filter_x < filter_width; ++filter_x)
             {
 #pragma HLS pipeline
-              const int in_x = in_x_origin + dilation_width_factor * filter_x;
+              const int in_x = out_x + filter_x;
 
               // Zero padding by omitting the areas outside the image.
               const bool is_point_inside_image = (in_x >= 0)
@@ -828,17 +825,14 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
   for (int b = 0; b < batches; ++b)
   {
 #pragma HLS pipeline
-    for (int out_y = 0; out_y < output_height; ++out_y)
+    for (int out_y = - pad_height; out_y < output_height - pad_height; ++out_y)
     {
 #pragma HLS pipeline
-      const int in_y_origin = (out_y * stride_height) - pad_height;
+      StreamPeripheral_pushRowBuffer(stream_in, out_y);
 
-      StreamPeripheral_pushRowBuffer(stream_in, in_y_origin);
-
-      for (int out_x = 0; out_x < output_width; ++out_x)
+      for (int out_x = - pad_width; out_x < output_width - pad_width; ++out_x)
       {
 #pragma HLS pipeline
-        const int in_x_origin = (out_x * stride_width) - pad_width;
         for (int ic = 0; ic < input_depth; ++ic)
         {
 #pragma HLS pipeline
@@ -856,9 +850,8 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
               for (int filter_x = 0; filter_x < filter_width; ++filter_x)
               {
 #pragma HLS pipeline
-                const int in_x = in_x_origin + dilation_width_factor * filter_x;
-                const int in_y =
-                    in_y_origin + dilation_height_factor * filter_y;
+                const int in_x = out_x + filter_x;
+                const int in_y = out_y + filter_y;
                 // If the location is outside the bounds of the input image,
                 // use zero as a default value.
                 if ((in_x >= 0) && (in_x < input_width) && (in_y >= 0) &&

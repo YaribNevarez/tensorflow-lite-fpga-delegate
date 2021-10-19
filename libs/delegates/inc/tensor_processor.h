@@ -76,9 +76,9 @@ public:
          const tflite::RuntimeShape& output_shape, int8_t* output_data,
          Event * parent = nullptr);
 
-  static void set_execution_flags (Task &, int);
+  static void setExecutionFlags (Task &, int);
 
-  static int get_execution_flags (Task &);
+  static int getExecutionFlags (Task &);
 
   static bool isValid (Task &);
 

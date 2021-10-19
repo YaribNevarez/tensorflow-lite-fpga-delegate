@@ -160,9 +160,9 @@ public:
 
   virtual int execute (Transaction * transaction);
 
-  static void set_transaction_flags (Transaction &, int);
+  static void setTransactionFlags (Transaction &, int);
 
-  static int get_transaction_flags (Transaction &);
+  static int getTransactionFlags (Transaction &);
 
 protected:
   virtual int initialize_ip (void);

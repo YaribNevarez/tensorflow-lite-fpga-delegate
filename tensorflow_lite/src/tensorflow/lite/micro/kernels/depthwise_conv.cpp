@@ -26,14 +26,14 @@ limitations under the License.
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/padding.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
-#include "tensor_processor.h"
+#include "tp_delegate.h"
 
 namespace tflite {
 namespace {
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   TFLITE_DCHECK(context->AllocatePersistentBuffer != nullptr);
-  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(TensorProcessor::Task));
+  return context->AllocatePersistentBuffer (context, sizeof(OpDataConv) + sizeof(TPDelegate::Job));
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
@@ -55,17 +55,17 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
           ? tflite::micro::GetEvalInput(context, node, kDepthwiseConvBiasTensor)
           : nullptr;
 
-  TensorProcessor * delegate = reinterpret_cast<TensorProcessor *> (tflite::micro::GetDelegate (context));
+  TPDelegate * delegate = reinterpret_cast<TPDelegate *> (tflite::micro::GetDelegate (context));
 
-  TensorProcessor::Task & task = *(reinterpret_cast<TensorProcessor::Task*>(node->user_data + sizeof(OpDataConv)));
+  TPDelegate::Job & job = *(reinterpret_cast<TPDelegate::Job*>(node->user_data + sizeof(OpDataConv)));
 
   if (delegate != nullptr)
   {
     switch (input->type) {  // Already know in/out types are same.
       case kTfLiteFloat32: {
-        if (!TensorProcessor::isValid (task))
+        if (!TPDelegate::isValid (job))
         {
-          task = delegate->createTask (
+          job = delegate->createJob (
               DepthwiseConvParamsFloat (params, data),
               tflite::micro::GetTensorShape (input),
               tflite::micro::GetTensorData<float> (input),
@@ -77,13 +77,13 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
               tflite::micro::GetTensorData<float> (output),
               reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (task);
+        delegate->execute (job);
         break;
       }
       case kTfLiteInt8: {
-        if (!TensorProcessor::isValid (task))
+        if (!TPDelegate::isValid (job))
         {
-          task = delegate->createTask (
+          job = delegate->createJob (
               DepthwiseConvParamsQuantized (params, data),
               data.per_channel_output_multiplier,
               data.per_channel_output_shift,
@@ -97,7 +97,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
               tflite::micro::GetTensorData<int8_t>(output),
               reinterpret_cast<Event *> (node->delegate));
         }
-        delegate->execute (task);
+        delegate->execute (job);
         break;
       }
       default:
