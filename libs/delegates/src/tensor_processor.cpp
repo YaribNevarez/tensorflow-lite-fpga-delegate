@@ -497,21 +497,21 @@ TensorProcessor::ProcessorArray * TensorProcessor::instatiateProcessors (void)
         .blockIndex  = 0
       }
     },
-//    {
-//      .hwVtbl        = &HardwareVtbl_Conv_,
-//      .dmaVtbl       = &DMAHardwareVtbl_,
-//      .hwDeviceID    = XPAR_CONV_1_DEVICE_ID,
-//      .dmaDeviceID   = XPAR_AXI_DMA_1_DEVICE_ID,
-//      .hwIntVecID    = XPAR_FABRIC_CONV_1_INTERRUPT_INTR,
-//      .dmaTxIntVecID = XPAR_FABRIC_AXI_DMA_1_MM2S_INTROUT_INTR,
-//      .dmaRxIntVecID = XPAR_FABRIC_AXI_DMA_1_S2MM_INTROUT_INTR,
-//      .channelSize   = 4,
-//      .ddrMem =
-//      { .baseAddress = XPAR_PS7_DDR_0_S_AXI_BASEADDR + 0x32000000,
-//        .highAddress = XPAR_PS7_DDR_0_S_AXI_BASEADDR + 0x32FFFFFF,
-//        .blockIndex  = 0
-//      }
-//    }
+    {
+      .hwVtbl        = &HardwareVtbl_Conv_,
+      .dmaVtbl       = &DMAHardwareVtbl_,
+      .hwDeviceID    = XPAR_CONV_1_DEVICE_ID,
+      .dmaDeviceID   = XPAR_AXI_DMA_1_DEVICE_ID,
+      .hwIntVecID    = XPAR_FABRIC_CONV_1_INTERRUPT_INTR,
+      .dmaTxIntVecID = XPAR_FABRIC_AXI_DMA_1_MM2S_INTROUT_INTR,
+      .dmaRxIntVecID = XPAR_FABRIC_AXI_DMA_1_S2MM_INTROUT_INTR,
+      .channelSize   = 4,
+      .ddrMem =
+      { .baseAddress = XPAR_PS7_DDR_0_S_AXI_BASEADDR + 0x32000000,
+        .highAddress = XPAR_PS7_DDR_0_S_AXI_BASEADDR + 0x32FFFFFF,
+        .blockIndex  = 0
+      }
+    }
   };
 
   int num_processors = sizeof(pu_profile_array) / sizeof(ProcessingUnit::Profile);
