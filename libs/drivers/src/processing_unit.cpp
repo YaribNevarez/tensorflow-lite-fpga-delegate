@@ -224,8 +224,8 @@ void ProcessingUnit::dmaRxInterruptHandler (void * data)
       ASSERT(transaction != nullptr);
       if ((transaction != nullptr) && (transaction->flags & RX_CACHE_FETCH))
       {
-        Xil_DCacheInvalidateRange ((INTPTR) transaction->rxBufferPtr - 0x1000,
-                                   transaction->rxBufferSize + 0x1000);
+        Xil_DCacheInvalidateRange ((INTPTR) transaction->rxBufferPtr,
+                                   transaction->rxBufferSize);
       }
 
       transaction->flags |= DMA_RX_DONE;

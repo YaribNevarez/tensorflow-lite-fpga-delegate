@@ -117,17 +117,29 @@ void setup ()
   ASSERT(rc == FR_OK);
 
   //rc = File_readData ("sconvi8", model_data, 1168880);
-  rc = File_readData ("vgg6_f32", model_data, 2207464); // [Acc 71.8%, 143] [Acc 70.6%, 152c]
+  //rc = File_readData ("vgg6_f32", model_data, 2207464); // [Acc 71.8%, 143] [Acc 70.6%, 152c]
   //rc = File_readData ("vgg6_i8", model_data, 573792);
   //rc = File_readData ("PERSON", model_data, 300568);
   //rc = File_readData ("vgg4_f32", model_data, 3739612); // [Acc 63.09, 143] [Acc 46.51, 150]
   //rc = File_readData ("mobile5", model_data, 214588); // [Acc 31.44, 143] [Acc 66.67, 154] [Acc 12.58, 152]
+  //rc = File_readData ("models/qvgg", model_data, 2486324); // Logarithmic quantization *************
 
   //rc = File_readData ("models/mob_f32", model_data, 214648);
   //rc = File_readData ("models/mob_i8",  model_data,  65656);
 
   //rc = File_readData ("models/vgg_f32", model_data, 3739612);
   //rc = File_readData ("models/vgg_i8",  model_data,  958768);
+
+  //rc = File_readData ("models/qvgg_q0", model_data, 1377772);
+  //rc = File_readData ("models/qvgg_q1", model_data, 1377772);
+  //rc = File_readData ("models/qvgg_q2", model_data, 1377772);
+  //rc = File_readData ("models/tvgg_nq", model_data, 1377772);
+  //rc = File_readData ("models/tvgg_nq2", model_data, 2127696);
+  //rc = File_readData ("models/vgg_m2", model_data, 2127696);
+  //rc = File_readData ("models/tvgg_n", model_data, 1167348);
+  //rc = File_readData ("models/tvggn60", model_data, 1457320);
+  //rc = File_readData ("models/t2vggn60", model_data, 4352316);
+  rc = File_readData ("models/t2vggn60", model_data, 772912);
 
   ASSERT(rc == FR_OK);
 

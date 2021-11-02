@@ -5,11 +5,17 @@ fig, (ax1, ax2) = plt.subplots(2, 1)
 
 fig.suptitle('Performance')
 
-begin   = np.array([0.000, 0.003, 330.686, 3502.666, 3514.673, 5044.943, 8091.811, 8097.858, 9492.319, 12273.338, 12276.349, 12276.600, 12291.897, 12291.981])
-latency = np.array([12291.990, 330.679, 3171.978, 12.003, 1530.267, 3046.866, 6.044, 1394.459, 2781.016, 3.008, 0.249, 15.293, 0.082, 0.007])
-event   = ["Interpreter", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX"]
-colors = ["#1864ab", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9"]
+#Python:
+begin   = np.array([0.000, 0.004, 0.008, 0.026, 33.111, 45.527, 45.531, 45.691, 79.291, 85.408, 85.411, 86.032, 110.707, 113.741, 113.999, 125.755, 125.821, ])
+latency = np.array([125.831, 33.105, 0.033, 32.960, 12.413, 33.761, 0.241, 33.535, 6.115, 25.297, 0.666, 24.639, 3.032, 0.255, 11.753, 0.065, 0.008, ])
+event   = ["MODEL", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", ]
+colors  = ["#1864ab", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", ]
 
+
+data = [[0.003, 340.883, 353.153, 1923.492, 1929.562, 3360.153, 3363.175, 3363.433, 3375.196, 3375.263, ],
+        [ 340.876, 12.268, 1570.337, 6.068, 1430.588, 3.020, 0.255, 11.760, 0.065, 0.008, ],
+        [ 32.960, 0.000, 33.535, 0.000, 24.639, 0.000, 0.000, 0.000, 0.000, 0.000, ]]
+columns = ("CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", )
 
 ax1.barh(range(len(begin)),  latency, left=begin, color=colors)
 ax1.grid(linestyle = ':')
@@ -23,11 +29,6 @@ ax1.tick_params(axis='both', which='minor', labelsize=1)
 plt.xlabel("Schedule (ms)")
 plt.ylabel("Task")
 
-data = [[ 0.003, 330.686, 3502.666, 3514.673, 5044.943, 8091.811, 8097.858, 9492.319, 12273.338, 12276.349, 12276.600, 12291.897, 12291.981],
-        [ 330.679, 3171.978, 12.003, 1530.267, 3046.866, 6.044, 1394.459, 2781.016, 3.008, 0.249, 15.293, 0.082, 0.007],
-        [ 33.368, 89.966, 0.000, 44.238, 74.276, 0.000, 34.347, 61.630, 0.000, 0.000, 0.000, 0.000, 0.000]]
-
-columns = ("CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX")
 rows = ["Hardware", "Software", "II OFFSET"]
 
 # Get some pastel shades for the colors

@@ -203,6 +203,7 @@ int main (void)
       .output_tensor          = conv_test::int8::conv_2d::output_tensor,
       .output_tensor_len      = conv_test::int8::conv_2d::output_tensor_len
     },
+#if DEPTHWISE_CONV_ENGINE
     {
       .name                   = "DEPTHWISE_CONV_2D",
       .transaction_setup      = conv_test::int8::depthwise_conv_2d::transaction_setup,
@@ -212,6 +213,7 @@ int main (void)
       .output_tensor          = conv_test::int8::depthwise_conv_2d::output_tensor,
       .output_tensor_len      = conv_test::int8::depthwise_conv_2d::output_tensor_len
     }
+#endif
   };
 
   conv_test::run (fixedpoint_test_array, sizeof(fixedpoint_test_array) / sizeof(conv_test::TestCase));
@@ -227,6 +229,7 @@ int main (void)
       .output_tensor          = conv_test::float32::conv_2d::output_tensor,
       .output_tensor_len      = conv_test::float32::conv_2d::output_tensor_len
     },
+#if DEPTHWISE_CONV_ENGINE
     {
       .name                   = "DEPTHWISE_CONV_2D",
       .transaction_setup      = conv_test::float32::depthwise_conv_2d::transaction_setup,
@@ -236,6 +239,7 @@ int main (void)
       .output_tensor          = conv_test::float32::depthwise_conv_2d::output_tensor,
       .output_tensor_len      = conv_test::float32::depthwise_conv_2d::output_tensor_len
     }
+#endif
   };
 
   conv_test::run (test_array, sizeof(test_array) / sizeof(conv_test::TestCase));

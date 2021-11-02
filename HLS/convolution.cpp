@@ -972,6 +972,7 @@ int conv (ConvExecutionMode mode,
           Convolution_execution (stream_in, stream_out, Conv_profile, Conv_filter, Conv_bias);
 #endif
           break;
+#if DEPTHWISE_CONV_ENGINE
         case DEPTHWISE_CONV_2D:
 #if FIXED_POINT
           DepthwiseConv (stream_in,
@@ -985,6 +986,7 @@ int conv (ConvExecutionMode mode,
           DepthwiseConv (stream_in, stream_out, Conv_profile, Conv_filter, Conv_bias);
 #endif
           break;
+#endif
         default:;
       }
       break;
