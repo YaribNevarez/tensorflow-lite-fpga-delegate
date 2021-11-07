@@ -6,16 +6,16 @@ fig, (ax1, ax2) = plt.subplots(2, 1)
 fig.suptitle('Performance')
 
 #Python:
-begin   = np.array([0.000, 0.004, 0.008, 0.026, 33.111, 45.527, 45.531, 45.691, 79.291, 85.408, 85.411, 86.032, 110.707, 113.741, 113.999, 125.755, 125.821, ])
-latency = np.array([125.831, 33.105, 0.033, 32.960, 12.413, 33.761, 0.241, 33.535, 6.115, 25.297, 0.666, 24.639, 3.032, 0.255, 11.753, 0.065, 0.008, ])
-event   = ["MODEL", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", ]
-colors  = ["#1864ab", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", ]
+begin   = np.array([0.000, 0.004, 0.010, 0.029, 0.039, 0.055, 20.006, 35.329, 35.333, 35.489, 35.543, 35.698, 50.674, 55.450, 55.453, 55.685, 55.709, 55.942, 60.565, 61.999, 62.002, 62.547, 62.559, 63.104, 65.023, 65.265, 79.050, 79.131, ])
+latency = np.array([79.141, 20.000, 0.029, 19.897, 0.025, 19.711, 15.320, 15.342, 0.210, 15.156, 0.206, 14.553, 4.774, 5.114, 0.256, 4.868, 0.250, 4.467, 1.432, 3.022, 0.556, 2.323, 0.552, 1.911, 0.240, 13.781, 0.079, 0.008, ])
+event   = ["MODEL", "CONV_2D", "DELEGATE", "HARDWARE", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "DELEGATE", "HARDWARE", "MAX_POOL_2D", "CONV_2D", "DELEGATE", "HARDWARE", "DELEGATE", "HARDWARE", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", ]
+colors  = ["#1864ab", "#4a98c9", "#6faed4", "#94c4df", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#6faed4", "#94c4df", "#6faed4", "#94c4df", "#4a98c9", "#4a98c9", "#4a98c9", "#4a98c9", ]
 
+data = [[0.004, 20.006, 35.329, 50.674, 55.450, 60.565, 61.999, 65.023, 65.265, 79.050, 79.131, ],
+        [ 20.000, 15.320, 15.342, 4.774, 5.114, 1.432, 3.022, 0.240, 13.781, 0.079, 0.008, ],
+        [ 19.897, 0.000, 15.156, 0.000, 4.868, 0.000, 2.323, 0.000, 0.000, 0.000, 0.000, ]]
+columns = ("CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", )
 
-data = [[0.003, 340.883, 353.153, 1923.492, 1929.562, 3360.153, 3363.175, 3363.433, 3375.196, 3375.263, ],
-        [ 340.876, 12.268, 1570.337, 6.068, 1430.588, 3.020, 0.255, 11.760, 0.065, 0.008, ],
-        [ 32.960, 0.000, 33.535, 0.000, 24.639, 0.000, 0.000, 0.000, 0.000, 0.000, ]]
-columns = ("CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "CONV_2D", "MAX_POOL_2D", "RESHAPE", "FULLY_CONNECTED", "FULLY_CONNECTED", "SOFTMAX", )
 
 ax1.barh(range(len(begin)),  latency, left=begin, color=colors)
 ax1.grid(linestyle = ':')

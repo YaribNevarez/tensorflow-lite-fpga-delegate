@@ -139,7 +139,7 @@ void setup ()
   //rc = File_readData ("models/tvgg_n", model_data, 1167348);
   //rc = File_readData ("models/tvggn60", model_data, 1457320);
   //rc = File_readData ("models/t2vggn60", model_data, 4352316);
-  rc = File_readData ("models/t2vggn60", model_data, 772912);
+  rc = File_readData ("models/t2vggn60", model_data, 1375660);
 
   ASSERT(rc == FR_OK);
 
