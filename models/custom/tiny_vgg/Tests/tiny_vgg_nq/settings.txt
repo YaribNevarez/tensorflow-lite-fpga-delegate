@@ -1,3 +1,0 @@
-Epochs = 5
-Batch_size = 100
-Non-Quantized
