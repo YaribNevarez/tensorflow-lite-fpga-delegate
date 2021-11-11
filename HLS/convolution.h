@@ -8,9 +8,14 @@
 #include "ap_axi_sdata.h"
 #include "conv_hls.h"
 
-#define CONV_FILTER_BUFFER_SIZE     60*3*3*120
-#define CONV_BIAS_BUFFER_SIZE       120
-#define CONV_INPUT_BUFFER_SIZE      32*60*3
+#define K	(3)
+#define W	(32)
+#define Ci	(60)
+#define Co	(120)
+
+#define CONV_FILTER_BUFFER_SIZE     (Ci*K*K*Co)
+#define CONV_BIAS_BUFFER_SIZE       (Co)
+#define CONV_INPUT_BUFFER_SIZE      (W*Ci*K)
 
 #define FIXED_POINT                 false
 
