@@ -266,7 +266,11 @@ static int StreamPeripheral_yOffset = 0;
 static int StreamPeripheral_lookupTable[32] = { 0 };
 static int StreamPeripheral_lookupTableRows[32] = { 0 };
 static int StreamPeripheral_lookupIndex = 0;
+#if DYNAMIC_FILTER_SHAPE
 static int StreamPeripheral_lookupLength = 0;
+#else
+const int StreamPeripheral_lookupLength = FILTER_HEIGHT;
+#endif
 static int StreamPeripheral_rowCount = 0;
 static int StreamPeripheral_rowSize = 0;
 static TensorShape StreamPeripheral_inputShape = { 0 };
@@ -304,7 +308,9 @@ inline void StreamPeripheral_readRowBuffer (hls::stream<StreamChannel> &stream_i
 
 inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
                                    TensorShape * input_shape,
+#if DYNAMIC_FILTER_SHAPE
                                    TensorShape * filter_shape,
+#endif
                                    TensorShape * output_shape)
 {
   AXIStream_index = 0;
@@ -313,7 +319,9 @@ inline void StreamPeripheral_initialize ( hls::stream<StreamChannel> &stream_in,
 
   AXIStreamOut_indexLast = FlatSize(output_shape);
 
+#if DYNAMIC_FILTER_SHAPE
   StreamPeripheral_lookupLength = filter_shape->dims_[1]; // Filter height
+#endif
 
   StreamPeripheral_lookupIndex = StreamPeripheral_lookupLength - 1;
 
@@ -446,8 +454,13 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   volatile int input_depth = input_shape->dims_[3];
 
   TensorShape * filter_shape = &profile->filter_shape_;
+#if DYNAMIC_FILTER_SHAPE
   volatile int filter_height = filter_shape->dims_[1];
   volatile int filter_width = filter_shape->dims_[2];
+#else
+  const int filter_height = FILTER_HEIGHT;
+  const int filter_width = FILTER_WIDTH;
+#endif
 
   TensorShape * output_shape = &profile->output_shape_;
   volatile int output_height = output_shape->dims_[1];
@@ -486,8 +499,11 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
   Activation_min_magnitude = Float_denormalize (output_activation_min);
 #endif
   ///////////////////////////////////////////////////////////////////////////////
+#if DYNAMIC_FILTER_SHAPE
   StreamPeripheral_initialize (stream_in, input_shape, filter_shape, output_shape);
-
+#else
+  StreamPeripheral_initialize (stream_in, input_shape, output_shape);
+#endif
   CONV_OUTPUT_BATCH: for (int batch = 0; batch < batches; ++batch)
   {
 #pragma HLS pipeline
@@ -530,9 +546,14 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
 #pragma HLS pipeline
                 InputFormat input_value = StreamPeripheral_read (in_y, in_x, in_channel);
 
+#if DYNAMIC_FILTER_SHAPE
                 CustomFormat filter_value = Conv_filter[Offset (filter_shape,
                                                          out_channel, filter_y,
                                                          filter_x, in_channel)];
+#else
+                CustomFormat filter_value = Conv_filter[((((out_channel) * FILTER_HEIGHT + filter_y) * FILTER_WIDTH + (filter_x)) * (filter_shape)->dims_[3] + (in_channel))];
+#endif
+
 #if FIXED_POINT
                 total += ((AccumulatorFormat) filter_value)
                       * (((AccumulatorFormat) input_value) + input_offset);
@@ -795,8 +816,13 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
   const int input_depth = input_shape.dims_[3];
 
   TensorShape & filter_shape = Conv_profile.filter_shape_;
-  const int filter_height = filter_shape.dims_[1];
-  const int filter_width = filter_shape.dims_[2];
+#if DYNAMIC_FILTER_SHAPE
+  volatile int filter_height = filter_shape.dims_[1];
+  volatile int filter_width = filter_shape.dims_[2];
+#else
+  const int filter_height = FILTER_HEIGHT;
+  const int filter_width = FILTER_WIDTH;
+#endif
 
   TensorShape & output_shape = Conv_profile.output_shape_;
   const int batches = output_shape.dims_[0];
@@ -820,7 +846,11 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
   MagnitudeFormat   Activation_min_magnitude = Float_denormalize (output_activation_min);
 #endif
 
+#if DYNAMIC_FILTER_SHAPE
   StreamPeripheral_initialize (stream_in, &input_shape, &filter_shape, &output_shape);
+#else
+  StreamPeripheral_initialize (stream_in, &input_shape, &output_shape);
+#endif
 
   for (int b = 0; b < batches; ++b)
   {
@@ -858,8 +888,13 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
                     (in_y < input_height)) {
                   InputFormat input_value = StreamPeripheral_read (in_y, in_x, ic);
 
-                  CustomFormat filter_value = Conv_filter[Offset(
-                      &filter_shape, 0, filter_y, filter_x, oc)];
+#if DYNAMIC_FILTER_SHAPE
+                  CustomFormat filter_value = Conv_filter[Offset(&filter_shape,
+                                                                 0, filter_y,
+                                                                 filter_x, oc)];
+#else
+                CustomFormat filter_value = Conv_filter[((((0) * FILTER_HEIGHT + filter_y) * FILTER_WIDTH + (filter_x)) * (&filter_shape)->dims_[3] + (oc))];
+#endif
 #if FIXED_POINT
                   total += ((AccumulatorFormat) filter_value)
                         * (((AccumulatorFormat) input_value) + input_offset);

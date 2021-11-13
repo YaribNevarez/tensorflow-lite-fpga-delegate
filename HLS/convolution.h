@@ -8,16 +8,25 @@
 #include "ap_axi_sdata.h"
 #include "conv_hls.h"
 
-#define K	(3)
-#define W	(32)
-#define Ci	(60)
-#define Co	(120)
+#define K   (3)
+#define W   (32)
+#define Ci  (60)
+#define Co  (120)
 
 #define CONV_FILTER_BUFFER_SIZE     (Ci*K*K*Co)
 #define CONV_BIAS_BUFFER_SIZE       (Co)
 #define CONV_INPUT_BUFFER_SIZE      (W*Ci*K)
 
 #define FIXED_POINT                 false
+
+
+#define DEPTHWISE_CONV_ENGINE       true
+
+#define DYNAMIC_FILTER_SHAPE        true
+#if !DYNAMIC_FILTER_SHAPE
+#define FILTER_HEIGHT               3
+#define FILTER_WIDTH                3
+#endif
 
 #if !FIXED_POINT
 #define HYBRID_LOGARITHMIC          true
@@ -27,9 +36,7 @@
 #define CUSTOM_MANTISSA_BIT_WIDTH   2
 
 
-#define CORRECTION                  true
-
-#define DEPTHWISE_CONV_ENGINE       false
+#define CORRECTION                  false
 
 // Set to 0 for normalized numbers [0 - 1), All exponents are on the left side, so they are stored without sign
 #define CUSTOM_EXPONENT_SIGN_BIT    1
