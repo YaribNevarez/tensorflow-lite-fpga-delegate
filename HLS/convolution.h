@@ -20,7 +20,7 @@
 #define FIXED_POINT                 false
 
 
-#define DEPTHWISE_CONV_ENGINE       true
+#define DEPTHWISE_CONV_ENGINE       false
 
 #define DYNAMIC_FILTER_SHAPE        true
 #if !DYNAMIC_FILTER_SHAPE

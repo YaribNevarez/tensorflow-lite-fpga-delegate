@@ -522,48 +522,40 @@ inline int Convolution_execution (hls::stream<StreamChannel> &stream_in,
 #if HYBRID_LOGARITHMIC
           Total_magnitude = 0;
 #endif
-          CONV_FILTER_ROW: for (int filter_y = 0; filter_y < filter_height; ++filter_y)
+          CONV_FILTER_ROW: for (int in_y = out_y; in_y < filter_height + out_y; ++in_y)
           {
 #pragma HLS pipeline
-            const int in_y = out_y + filter_y;
-            CONV_FILTER_COL: for (int filter_x = 0; filter_x < filter_width; ++filter_x)
+            CONV_FILTER_COL: for (int in_x = out_x; in_x < filter_width + out_x; ++in_x)
             {
 #pragma HLS pipeline
-              const int in_x = out_x + filter_x;
-
               // Zero padding by omitting the areas outside the image.
-              const bool is_point_inside_image = (in_x >= 0)
-                  && (in_x < input_width) && (in_y >= 0)
-                  && (in_y < input_height);
-
-              if (!is_point_inside_image)
+              if ((in_x >= 0) && (in_x < input_width) && (in_y >= 0)
+                  && (in_y < input_height))
               {
-                continue;
-              }
+                CONV_FILTER_CHANNEL: for (int in_channel = 0; in_channel < input_depth; ++in_channel)
+                {
+  #pragma HLS pipeline
+                  InputFormat input_value = StreamPeripheral_read (in_y, in_x, in_channel);
 
-              CONV_FILTER_CHANNEL: for (int in_channel = 0; in_channel < input_depth; ++in_channel)
-              {
-#pragma HLS pipeline
-                InputFormat input_value = StreamPeripheral_read (in_y, in_x, in_channel);
+  #if DYNAMIC_FILTER_SHAPE
+                  CustomFormat filter_value = Conv_filter[Offset (filter_shape,
+                                                           out_channel, in_y - out_y,
+                                                           in_x - out_x, in_channel)];
+  #else
+                  CustomFormat filter_value = Conv_filter[((((out_channel) * FILTER_HEIGHT + (in_y - out_y)) * FILTER_WIDTH + (in_x - out_x)) * (filter_shape)->dims_[3] + (in_channel))];
+  #endif
 
-#if DYNAMIC_FILTER_SHAPE
-                CustomFormat filter_value = Conv_filter[Offset (filter_shape,
-                                                         out_channel, filter_y,
-                                                         filter_x, in_channel)];
-#else
-                CustomFormat filter_value = Conv_filter[((((out_channel) * FILTER_HEIGHT + filter_y) * FILTER_WIDTH + (filter_x)) * (filter_shape)->dims_[3] + (in_channel))];
-#endif
-
-#if FIXED_POINT
-                total += ((AccumulatorFormat) filter_value)
-                      * (((AccumulatorFormat) input_value) + input_offset);
-#else
-#if HYBRID_LOGARITHMIC
-                DotProduct_logarithmic (Total_magnitude, input_value, filter_value);
-#else
-                total += (input_value * filter_value);
-#endif
-#endif
+  #if FIXED_POINT
+                  total += ((AccumulatorFormat) filter_value)
+                        * (((AccumulatorFormat) input_value) + input_offset);
+  #else
+  #if HYBRID_LOGARITHMIC
+                  DotProduct_logarithmic (Total_magnitude, input_value, filter_value);
+  #else
+                  total += (input_value * filter_value);
+  #endif
+  #endif
+                }
               }
             }
           }
@@ -874,26 +866,25 @@ inline void DepthwiseConv (hls::stream<StreamChannel> &stream_in,
 #if HYBRID_LOGARITHMIC
             Total_magnitude = 0;
 #endif
-            for (int filter_y = 0; filter_y < filter_height; ++filter_y)
+            for (int in_y = out_y; in_y < filter_height + out_y; ++in_y)
             {
 #pragma HLS pipeline
-              for (int filter_x = 0; filter_x < filter_width; ++filter_x)
+              for (int in_x = out_x; in_x < filter_width + out_x; ++in_x)
               {
 #pragma HLS pipeline
-                const int in_x = out_x + filter_x;
-                const int in_y = out_y + filter_y;
                 // If the location is outside the bounds of the input image,
                 // use zero as a default value.
-                if ((in_x >= 0) && (in_x < input_width) && (in_y >= 0) &&
-                    (in_y < input_height)) {
+                if ((in_x >= 0) && (in_x < input_width) && (in_y >= 0)
+                    && (in_y < input_height))
+                {
                   InputFormat input_value = StreamPeripheral_read (in_y, in_x, ic);
 
 #if DYNAMIC_FILTER_SHAPE
                   CustomFormat filter_value = Conv_filter[Offset(&filter_shape,
-                                                                 0, filter_y,
-                                                                 filter_x, oc)];
+                                                                 0, in_y - out_y,
+                                                                 in_x - out_x, oc)];
 #else
-                CustomFormat filter_value = Conv_filter[((((0) * FILTER_HEIGHT + filter_y) * FILTER_WIDTH + (filter_x)) * (&filter_shape)->dims_[3] + (oc))];
+                CustomFormat filter_value = Conv_filter[((((0) * FILTER_HEIGHT + (in_y - out_y)) * FILTER_WIDTH + (in_x - out_x)) * (&filter_shape)->dims_[3] + (oc))];
 #endif
 #if FIXED_POINT
                   total += ((AccumulatorFormat) filter_value)
