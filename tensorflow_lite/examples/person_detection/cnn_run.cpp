@@ -140,7 +140,14 @@ void setup ()
   //rc = File_readData ("models/tvggn60", model_data, 1457320);
   //rc = File_readData ("models/t2vggn60", model_data, 4352316);
   //rc = File_readData ("models/t2vggn60", model_data, 1375660);
-  rc = File_readData ("models/cnn_f32", model_data, 1284928);
+  //rc = File_readData ("models/cnn_f32", model_data, 1284928);
+  //rc = File_readData ("models/scnn_f8", model_data, 979748);
+  //rc = File_readData ("models/scnn_l5", model_data, 979748);
+  //rc = File_readData ("models/cnn_log4", model_data, 1284928);
+  //rc = File_readData ("models/d_cnn", model_data, 621856);
+  //rc = File_readData ("models/vgg120", model_data, 1114844);
+  rc = File_readData ("models/CNN", model_data, 434472);
+  //rc = File_readData ("models/SCNN", model_data, 129292);
 
   ASSERT(rc == FR_OK);
 
